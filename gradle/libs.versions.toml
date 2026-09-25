@@ -1,5 +1,5 @@
 [versions]
-agp = "9.2.1"
+agp = "9.4.1"
 kotlin = "2.2.20"
 nav = "2.9.8"
 glide = "5.0.7"
