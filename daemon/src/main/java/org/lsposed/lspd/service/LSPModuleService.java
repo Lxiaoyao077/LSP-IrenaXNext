@@ -78,13 +78,14 @@ public class LSPModuleService extends IXposedService.Stub {
     private static final int TRANSACTION_GET_RUNNING_TARGETS = 14;
     private static final int TRANSACTION_HOT_RELOAD_MODULE = 15;
 
-    // Raw HOT_RELOAD_* status codes, mirrored from the API 102 AIDL. They go back over the wire as
-    // plain ints, so they have to match the module app's copy exactly.
-    static final int HOT_RELOAD_SUCCEEDED = 0;
-    static final int HOT_RELOAD_FAILED = 1;
-    static final int HOT_RELOAD_UNSUPPORTED = 2;
-    static final int HOT_RELOAD_IN_PROGRESS = 3;
-    static final int HOT_RELOAD_PROCESS_DIED = 4;
+    // Raw HOT_RELOAD_* status codes. They travel on to the module app as plain ints, so they have to
+    // match its copy of the API 102 IXposedService AIDL exactly; they are spelled out in our own
+    // AIDL so the daemon and the process side cannot drift apart.
+    static final int HOT_RELOAD_SUCCEEDED = ILSPProcessService.HOT_RELOAD_SUCCEEDED;
+    static final int HOT_RELOAD_FAILED = ILSPProcessService.HOT_RELOAD_FAILED;
+    static final int HOT_RELOAD_UNSUPPORTED = ILSPProcessService.HOT_RELOAD_UNSUPPORTED;
+    static final int HOT_RELOAD_IN_PROGRESS = ILSPProcessService.HOT_RELOAD_IN_PROGRESS;
+    static final int HOT_RELOAD_PROCESS_DIED = ILSPProcessService.HOT_RELOAD_PROCESS_DIED;
 
     private static final String HOT_RELOAD_CALLBACK_DESCRIPTOR = "io.github.libxposed.service.IHotReloadCallback";
     // oneway void onHotReloadResult(int status, String message) = 1
@@ -469,32 +470,46 @@ public class LSPModuleService extends IXposedService.Stub {
             return;
         }
         hotReloadExecutor.execute(() -> {
-            var result = performHotReload(target, extras);
+            var outcome = performHotReload(target, extras);
+            var status = outcome.getInt(ILSPProcessService.RESULT_STATUS);
             synchronized (targetLock) {
                 reloadingTargets.remove(targetId);
-                if (result.status == HOT_RELOAD_FAILED) {
+                if (status == HOT_RELOAD_FAILED) {
                     failedTargets.add(targetId);
                 } else {
                     failedTargets.remove(targetId);
                 }
             }
-            notifyHotReload(callback, result.status, result.message);
+            notifyHotReload(callback, status, outcome.getString(ILSPProcessService.RESULT_MESSAGE));
         });
     }
 
     @NonNull
-    private HotReloadResult performHotReload(@NonNull TargetKey target, @Nullable Bundle extras) {
+    private Bundle performHotReload(@NonNull TargetKey target, @Nullable Bundle extras) {
         var service = LSPApplicationService.processServiceOf(target.uid, target.pid);
         if (service == null) {
-            return new HotReloadResult(HOT_RELOAD_PROCESS_DIED, null);
+            return hotReloadOutcome(HOT_RELOAD_PROCESS_DIED, null);
         }
         try {
             return service.hotReloadModule(loadedModule.packageName, extras);
         } catch (RemoteException e) {
-            return new HotReloadResult(HOT_RELOAD_PROCESS_DIED, null);
+            return hotReloadOutcome(HOT_RELOAD_PROCESS_DIED, null);
         } catch (Throwable t) {
-            return new HotReloadResult(HOT_RELOAD_FAILED, t.getMessage());
+            return hotReloadOutcome(HOT_RELOAD_FAILED, t.getMessage());
         }
+    }
+
+    /**
+     * The status and diagnostic message a hot reload came back with, in the shape the AIDL carries
+     * them. A Bundle rather than a parcelable, so the channel needs nothing more generated than the
+     * interface itself.
+     */
+    @NonNull
+    private static Bundle hotReloadOutcome(int status, @Nullable String message) {
+        var outcome = new Bundle();
+        outcome.putInt(ILSPProcessService.RESULT_STATUS, status);
+        outcome.putString(ILSPProcessService.RESULT_MESSAGE, message);
+        return outcome;
     }
 
     /**
@@ -547,10 +562,10 @@ public class LSPModuleService extends IXposedService.Stub {
                 failedTargets.remove(targetId);
             }
             try {
-                var result = service.hotReloadModule(loadedModule.packageName, null);
+                var outcome = service.hotReloadModule(loadedModule.packageName, null);
                 synchronized (targetLock) {
                     reloadingTargets.remove(targetId);
-                    if (result.status == HOT_RELOAD_FAILED) {
+                    if (outcome.getInt(ILSPProcessService.RESULT_STATUS) == HOT_RELOAD_FAILED) {
                         failedTargets.add(targetId);
                     }
                 }

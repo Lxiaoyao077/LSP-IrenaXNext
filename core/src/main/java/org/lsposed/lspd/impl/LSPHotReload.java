@@ -24,8 +24,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.lsposed.lspd.core.ApplicationServiceClient;
-import org.lsposed.lspd.models.HotReloadResult;
 import org.lsposed.lspd.models.Module;
+import org.lsposed.lspd.service.ILSPProcessService;
 import org.lsposed.lspd.util.LspModuleClassLoader;
 
 import java.util.Collections;
@@ -51,14 +51,13 @@ final class LSPHotReload {
 
     private static final String TAG = "LSPosed-HotReload";
 
-    // Mirrors the raw HOT_RELOAD_* codes the API 102 IXposedService AIDL puts on the wire. They are
-    // repeated here because the vendored service AIDL in this tree predates API 102, and the daemon
-    // reads the very same numbers out of a parcel it marshals by hand.
-    static final int STATUS_SUCCEEDED = 0;
-    static final int STATUS_FAILED = 1;
-    static final int STATUS_UNSUPPORTED = 2;
-    static final int STATUS_IN_PROGRESS = 3;
-    static final int STATUS_PROCESS_DIED = 4;
+    // Mirrors the raw HOT_RELOAD_* codes the API 102 IXposedService AIDL puts on the wire; declared
+    // once in our own AIDL so the daemon, which forwards them, cannot drift apart from here.
+    static final int STATUS_SUCCEEDED = ILSPProcessService.HOT_RELOAD_SUCCEEDED;
+    static final int STATUS_FAILED = ILSPProcessService.HOT_RELOAD_FAILED;
+    static final int STATUS_UNSUPPORTED = ILSPProcessService.HOT_RELOAD_UNSUPPORTED;
+    static final int STATUS_IN_PROGRESS = ILSPProcessService.HOT_RELOAD_IN_PROGRESS;
+    static final int STATUS_PROCESS_DIED = ILSPProcessService.HOT_RELOAD_PROCESS_DIED;
 
     /** The module code a process is running, as one unit. */
     static final class Generation {
@@ -117,14 +116,17 @@ final class LSPHotReload {
      * old entry instances, then hand the snapshot to the new code. Nothing is retired before the new
      * code exists, so a build failure leaves the process running the old generation untouched.
      * </p>
+     *
+     * @return a {@link Bundle} carrying {@link ILSPProcessService#RESULT_STATUS} and, when there is
+     * one, {@link ILSPProcessService#RESULT_MESSAGE}
      */
     @NonNull
-    static HotReloadResult reload(@NonNull String packageName, @Nullable Bundle extras) {
+    static Bundle reload(@NonNull String packageName, @Nullable Bundle extras) {
         synchronized (reloadLock) {
             var old = generations.get(packageName);
             if (old == null) {
                 Log.w(TAG, "No generation of " + packageName + " in this process to reload");
-                return new HotReloadResult(STATUS_UNSUPPORTED, null);
+                return newResult(STATUS_UNSUPPORTED, null);
             }
 
             // Every entry class of the retiring generation gets to veto. A refusal is a bare "no":
@@ -135,11 +137,11 @@ final class LSPHotReload {
                 try {
                     if (!module.onHotReloading(reloading)) {
                         Log.d(TAG, packageName + " refused hot reload");
-                        return new HotReloadResult(STATUS_FAILED, null);
+                        return newResult(STATUS_FAILED, null);
                     }
                 } catch (Throwable t) {
                     Log.w(TAG, "onHotReloading of " + packageName, t);
-                    return new HotReloadResult(STATUS_FAILED, describe(t));
+                    return newResult(STATUS_FAILED, describe(t));
                 }
             }
 
@@ -152,7 +154,7 @@ final class LSPHotReload {
             var descriptor = findModuleDescriptor(packageName);
             if (descriptor == null) {
                 Log.w(TAG, "The daemon no longer serves " + packageName);
-                return new HotReloadResult(STATUS_UNSUPPORTED, null);
+                return newResult(STATUS_UNSUPPORTED, null);
             }
 
             final List<XposedModule> replacements;
@@ -160,17 +162,17 @@ final class LSPHotReload {
             try {
                 classLoader = LSPosedContext.createClassLoader(descriptor);
                 if (classLoader == null) {
-                    return new HotReloadResult(STATUS_UNSUPPORTED, null);
+                    return newResult(STATUS_UNSUPPORTED, null);
                 }
                 descriptor.file.moduleLibraryNames.forEach(org.lsposed.lspd.nativebridge.NativeAPI::recordNativeEntrypoint);
                 var context = LSPosedContext.contextOf(descriptor);
                 replacements = LSPosedContext.instantiate(classLoader, context, descriptor);
             } catch (Throwable t) {
                 Log.e(TAG, "Failed to build a new generation of " + packageName, t);
-                return new HotReloadResult(STATUS_FAILED, describe(t));
+                return newResult(STATUS_FAILED, describe(t));
             }
             if (replacements.isEmpty()) {
-                return new HotReloadResult(STATUS_UNSUPPORTED, null);
+                return newResult(STATUS_UNSUPPORTED, null);
             }
 
             // Past this point the new code is live, so the old generation is retired first: package
@@ -189,7 +191,7 @@ final class LSPHotReload {
                 }
             }
             Log.d(TAG, "Hot reloaded " + packageName + ", " + oldHandles.size() + " hook handle(s) handed over");
-            return new HotReloadResult(STATUS_SUCCEEDED, null);
+            return newResult(STATUS_SUCCEEDED, null);
         }
     }
 
@@ -203,6 +205,22 @@ final class LSPHotReload {
             }
         }
         return null;
+    }
+
+    /**
+     * The status and diagnostic message a reload finished with, in the shape the AIDL carries them.
+     *
+     * <p>A Bundle rather than a parcelable: the generated AIDL parcelable in this build has no
+     * all-args constructor, and the two values are read straight back out on the other side of the
+     * channel anyway.
+     * </p>
+     */
+    @NonNull
+    private static Bundle newResult(int status, @Nullable String message) {
+        var result = new Bundle();
+        result.putInt(ILSPProcessService.RESULT_STATUS, status);
+        result.putString(ILSPProcessService.RESULT_MESSAGE, message);
+        return result;
     }
 
     private static String describe(Throwable t) {

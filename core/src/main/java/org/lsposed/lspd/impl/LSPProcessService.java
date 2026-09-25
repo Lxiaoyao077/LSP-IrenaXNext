@@ -22,7 +22,6 @@ import android.os.Bundle;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import org.lsposed.lspd.models.HotReloadResult;
 import org.lsposed.lspd.service.ILSPProcessService;
 
 /**
@@ -59,7 +58,7 @@ public class LSPProcessService extends ILSPProcessService.Stub {
 
     @NonNull
     @Override
-    public HotReloadResult hotReloadModule(@NonNull String packageName, @Nullable Bundle extras) {
+    public Bundle hotReloadModule(@NonNull String packageName, @Nullable Bundle extras) {
         return LSPHotReload.reload(packageName, extras);
     }
 }
