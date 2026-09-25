@@ -10,7 +10,7 @@ A Zygisk module trying to provide an ART hooking framework which delivers consis
 
 ## Supported Versions
 
-Android 8.1 ~ 17 Beta 3
+Android 10 ~ 17
 
 ## Install
 

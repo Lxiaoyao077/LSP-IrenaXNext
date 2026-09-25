@@ -151,14 +151,24 @@ public final class AndroidAppHelper {
 		return ActivityThread.currentApplication();
 	}
 
-	/** @deprecated Use {@link XSharedPreferences} instead. */
+	/**
+	 * @deprecated Use {@code XposedInterface#getRemotePreferences(String)} instead. This hands back
+	 * an {@link XSharedPreferences}, whose constructors are deprecated for the same reason: it reads
+	 * the module's preferences file off disk, so it only works while that file stays readable from
+	 * every process the module is injected into.
+	 */
 	@SuppressWarnings("UnusedParameters")
 	@Deprecated
 	public static SharedPreferences getSharedPreferencesForPackage(String packageName, String prefFileName, int mode) {
 		return new XSharedPreferences(packageName, prefFileName);
 	}
 
-	/** @deprecated Use {@link XSharedPreferences} instead. */
+	/**
+	 * @deprecated Use {@code XposedInterface#getRemotePreferences(String)} instead. This hands back
+	 * an {@link XSharedPreferences}, whose constructors are deprecated for the same reason: it reads
+	 * the module's preferences file off disk, so it only works while that file stays readable from
+	 * every process the module is injected into.
+	 */
 	@Deprecated
 	public static SharedPreferences getDefaultSharedPreferencesForPackage(String packageName) {
 		return new XSharedPreferences(packageName);
