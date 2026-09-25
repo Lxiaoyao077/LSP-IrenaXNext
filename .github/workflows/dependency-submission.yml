@@ -1,0 +1,49 @@
+name: Dependency Submission
+
+on:
+  push:
+    branches: [ dev ]
+  workflow_dispatch:
+
+# Submitting a snapshot needs write access to the repository.
+permissions:
+  contents: write
+
+jobs:
+  submit-gradle-dependencies:
+    name: Submit Gradle dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Every Android subproject pins ndkVersion and cmaker resolves the toolchain while the
+      # build is configured, so even a dependency-resolution run needs the SDK, the NDK and
+      # CMake. The runner image has not accepted the licence for the NDK version we pin, and
+      # AGP reports that as LicenceNotAcceptedException, so the licences have to be accepted
+      # before anything touches the build, exactly as the Core workflow relies on.
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      - name: Remove Android's cmake
+        shell: bash
+        run: rm -rf $ANDROID_HOME/cmake
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@master
+        with:
+          version: 1.12.1
+
+      - name: Generate and submit dependency graph
+        uses: gradle/actions/dependency-submission@v6

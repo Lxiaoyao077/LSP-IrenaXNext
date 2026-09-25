@@ -1,0 +1,51 @@
+version: 2
+updates:
+  # Gradle build scripts and the version catalog under gradle/libs.versions.toml.
+  # Minor and patch bumps are grouped into one pull request; majors stay separate so each
+  # one gets a build of its own before it lands.
+  - package-ecosystem: "gradle"
+    target-branch: "dev"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    groups:
+      gradle-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # The actions the workflows pin.
+  - package-ecosystem: "github-actions"
+    target-branch: "dev"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # The pinned submodule commits. Keep this list short: the forks under external/ are pinned
+  # to revisions the native build is known to work against, so treat their pull requests as
+  # suggestions rather than something to merge on sight.
+  - package-ecosystem: "gitsubmodule"
+    target-branch: "dev"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
