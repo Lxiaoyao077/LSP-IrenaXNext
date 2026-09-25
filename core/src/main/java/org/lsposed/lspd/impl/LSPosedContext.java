@@ -258,8 +258,9 @@ public class LSPosedContext implements XposedInterface {
                     instance = (XposedModule) noArg.newInstance();
                     // detach() is per entry: only the instance that calls it stops, so the
                     // runnable carries this instance rather than the module as a whole.
-                    final var entry = instance;
-                    instance.attachFramework(context, () -> detach(entry));
+                    // Not named after the loop variable above, which is also an entry.
+                    final var entryInstance = instance;
+                    instance.attachFramework(context, () -> detach(entryInstance));
                 }
                 instances.add(instance);
             } catch (Throwable e) {

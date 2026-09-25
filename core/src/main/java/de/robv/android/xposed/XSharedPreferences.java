@@ -29,7 +29,6 @@ import android.os.Environment;
 import android.preference.PreferenceManager;
 
 import org.lsposed.lspd.core.BuildConfig;
-import org.lsposed.lspd.util.MetaDataReader;
 import org.lsposed.lspd.util.Utils.Log;
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -50,7 +49,6 @@ import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import de.robv.android.xposed.services.FileResult;
@@ -59,17 +57,6 @@ import de.robv.android.xposed.services.FileResult;
  * This class is basically the same as SharedPreferencesImpl from AOSP, but
  * read-only and without listeners support. Instead, it is made to be
  * compatible with all ROMs.
- *
- * <p><b>Deprecated as a way to obtain preferences.</b> Every constructor is deprecated in
- * favour of {@code XposedInterface#getRemotePreferences(String)}, which the framework serves
- * over IPC. This class reads the module's own preferences file off disk, so it only works while
- * that file is still readable by the processes the module is injected into - something Android
- * has been closing down since {@code MODE_WORLD_READABLE} went away, and that a module has to
- * keep re-establishing with {@link #makeWorldReadable}. The remote preferences have no such
- * requirement, and they work for a module that has never been launched.</p>
- *
- * <p>The class itself is not deprecated: instances already handed out keep working, and
- * deprecating the type would only add noise to the many signatures that still take one.</p>
  */
 public final class XSharedPreferences implements SharedPreferences {
     private static final String TAG = "XSharedPreferences";
@@ -178,11 +165,7 @@ public final class XSharedPreferences implements SharedPreferences {
      * Read settings from the specified file.
      *
      * @param prefFile The file to read the preferences from.
-     * @deprecated Use {@code XposedInterface#getRemotePreferences(String)} instead. This reads
-     * the file directly, so it depends on the file staying readable from whatever process the
-     * module ends up in.
      */
-    @Deprecated
     public XSharedPreferences(File prefFile) {
         mFile = prefFile;
         mFilename = prefFile.getAbsolutePath();
@@ -194,11 +177,7 @@ public final class XSharedPreferences implements SharedPreferences {
      * These preferences are returned by {@link PreferenceManager#getDefaultSharedPreferences}.
      *
      * @param packageName The package name.
-     * @deprecated Use {@code XposedInterface#getRemotePreferences(String)} instead. This reads
-     * the file directly, so it depends on the file staying readable from whatever process the
-     * module ends up in.
      */
-    @Deprecated
     public XSharedPreferences(String packageName) {
         this(packageName, packageName + "_preferences");
     }
@@ -209,40 +188,15 @@ public final class XSharedPreferences implements SharedPreferences {
      *
      * @param packageName  The package name.
      * @param prefFileName The file name without ".xml".
-     * @deprecated Use {@code XposedInterface#getRemotePreferences(String)} instead. This reads
-     * the file directly, so it depends on the file staying readable from whatever process the
-     * module ends up in.
      */
-    @Deprecated
     public XSharedPreferences(String packageName, String prefFileName) {
-        boolean newModule = false;
-        var m = XposedInit.getLoadedModules().getOrDefault(packageName, Optional.empty());
-        if (m.isPresent()) {
-            boolean isModule = false;
-            int xposedminversion = -1;
-            boolean xposedsharedprefs = false;
-            try {
-                Map<String, Object> metaData = MetaDataReader.getMetaData(new File(m.get()));
-                isModule = metaData.containsKey("xposedminversion");
-                if (isModule) {
-                    Object minVersionRaw = metaData.get("xposedminversion");
-                    if (minVersionRaw instanceof Integer) {
-                        xposedminversion = (Integer) minVersionRaw;
-                    } else if (minVersionRaw instanceof String) {
-                        xposedminversion = MetaDataReader.extractIntPart((String) minVersionRaw);
-                    }
-                    xposedsharedprefs = metaData.containsKey("xposedsharedprefs");
-                }
-            } catch (NumberFormatException | IOException e) {
-                Log.w(TAG, "Apk parser fails: " + e);
-            }
-            newModule = isModule && (xposedminversion > 92 || xposedsharedprefs);
-        }
-        if (newModule) {
-            mFile = new File(serviceClient.getPrefsPath(packageName), prefFileName + ".xml");
-        } else {
-            mFile = new File(Environment.getDataDirectory(), "data/" + packageName + "/shared_prefs/" + prefFileName + ".xml");
-        }
+        // The module's own preferences directory, as Android laid it out. Upstream calls the
+        // alternative "New XSharedPreferences": the framework redirected this directory into a
+        // path it owns and forced MODE_WORLD_READABLE so injected processes could read it. That
+        // is being removed, so there is no longer a second case here - a module that needs its
+        // preferences readable from other processes now either makes them readable itself
+        // (see makeWorldReadable) or uses XposedInterface#getRemotePreferences.
+        mFile = new File(Environment.getDataDirectory(), "data/" + packageName + "/shared_prefs/" + prefFileName + ".xml");
         mFilename = mFile.getAbsolutePath();
         init();
     }

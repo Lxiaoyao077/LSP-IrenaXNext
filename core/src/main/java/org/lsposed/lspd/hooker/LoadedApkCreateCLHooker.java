@@ -20,7 +20,6 @@
 
 package org.lsposed.lspd.hooker;
 
-import static org.lsposed.lspd.core.ApplicationServiceClient.serviceClient;
 
 import android.annotation.SuppressLint;
 import android.app.ActivityThread;
@@ -33,19 +32,12 @@ import androidx.annotation.NonNull;
 
 import org.lsposed.lspd.impl.LSPosedContext;
 import org.lsposed.lspd.util.Hookers;
-import org.lsposed.lspd.util.MetaDataReader;
-import org.lsposed.lspd.util.Utils;
 
-import java.io.File;
-import java.io.IOException;
 import java.lang.reflect.Field;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XC_MethodReplacement;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.XposedInit;
@@ -125,10 +117,6 @@ public class LoadedApkCreateCLHooker implements XposedInterface.Hooker {
             lpparam.classLoader = classLoader;
             lpparam.appInfo = loadedApk.getApplicationInfo();
             lpparam.isFirstApplication = isFirstPackage;
-
-            if (isFirstPackage && XposedInit.getLoadedModules().getOrDefault(packageName, Optional.empty()).isPresent()) {
-                hookNewXSP(lpparam);
-            }
 
             Hookers.logD("Call handleLoadedPackage: packageName=" + lpparam.packageName + " processName=" + lpparam.processName + " isFirstPackage=" + isFirstPackage + " classLoader=" + lpparam.classLoader + " appInfo=" + lpparam.appInfo);
             XC_LoadPackage.callAll(lpparam);
@@ -225,38 +213,4 @@ public class LoadedApkCreateCLHooker implements XposedInterface.Hooker {
         }
     }
 
-    private static void hookNewXSP(XC_LoadPackage.LoadPackageParam lpparam) {
-        int xposedminversion = -1;
-        boolean xposedsharedprefs = false;
-        try {
-            Map<String, Object> metaData = MetaDataReader.getMetaData(new File(lpparam.appInfo.sourceDir));
-            Object minVersionRaw = metaData.get("xposedminversion");
-            if (minVersionRaw instanceof Integer) {
-                xposedminversion = (Integer) minVersionRaw;
-            } else if (minVersionRaw instanceof String) {
-                xposedminversion = MetaDataReader.extractIntPart((String) minVersionRaw);
-            }
-            xposedsharedprefs = metaData.containsKey("xposedsharedprefs");
-        } catch (NumberFormatException | IOException e) {
-            Hookers.logE("ApkParser fails", e);
-        }
-
-        if (xposedminversion > 92 || xposedsharedprefs) {
-            Utils.logI("New modules detected, hook preferences");
-            XposedHelpers.findAndHookMethod("android.app.ContextImpl", lpparam.classLoader, "checkMode", int.class, new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    if (((int) param.args[0] & 1/*Context.MODE_WORLD_READABLE*/) != 0) {
-                        param.setThrowable(null);
-                    }
-                }
-            });
-            XposedHelpers.findAndHookMethod("android.app.ContextImpl", lpparam.classLoader, "getPreferencesDir", new XC_MethodReplacement() {
-                @Override
-                protected Object replaceHookedMethod(MethodHookParam param) {
-                    return new File(serviceClient.getPrefsPath(lpparam.packageName));
-                }
-            });
-        }
-    }
 }
