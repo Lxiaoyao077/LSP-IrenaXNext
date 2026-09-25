@@ -26,7 +26,6 @@ import android.content.pm.PackageParser;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.os.Binder;
-import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
 import android.os.RemoteException;
@@ -539,8 +538,9 @@ public class ConfigFileManager {
      */
     private static long readVersionCode(String path) {
         try {
-            var pkg = new PackageParser().parsePackage(toGlobalNamespace(path), 0, false);
-            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? pkg.getLongVersionCode() : pkg.versionCode;
+            // PackageParser.Package extends PackageInfo, whose versionCode is a plain public int on
+            // every supported release, so no getLongVersionCode() API level guard is needed.
+            return new PackageParser().parsePackage(toGlobalNamespace(path), 0, false).versionCode;
         } catch (Throwable e) {
             Log.w(TAG, "Can not read version code of " + path, e);
             return 0;

@@ -9,6 +9,8 @@ public class PackageParser {
 
 	public final static class Package {
         public ApplicationInfo applicationInfo;
+        /** {@code PackageParser.Package} extends {@link PackageInfo}, which declares this. */
+        public int versionCode;
 	}
 
 	/** Before SDK21 */
