@@ -816,6 +816,12 @@ public class ConfigManager {
         return isManager(uid) ? Collections.emptyList() : cachedScope.getOrDefault(new ProcessScope(processName, uid), Collections.emptyList());
     }
 
+    /** The cached descriptor of an enabled module, or null when it is not one. */
+    @Nullable
+    public Module getModuleByPackage(@NonNull String packageName) {
+        return cachedModule.get(packageName);
+    }
+
     // This is called when a new process created, use the cached result
     public boolean shouldSkipProcess(ProcessScope scope) {
         return !cachedScope.containsKey(scope) && !isManager(scope.uid);

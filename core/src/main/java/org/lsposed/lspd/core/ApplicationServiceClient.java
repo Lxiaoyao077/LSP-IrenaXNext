@@ -26,8 +26,10 @@ import android.os.RemoteException;
 
 import androidx.annotation.NonNull;
 
+import org.lsposed.lspd.impl.LSPProcessService;
 import org.lsposed.lspd.models.Module;
 import org.lsposed.lspd.service.ILSPApplicationService;
+import org.lsposed.lspd.service.ILSPProcessService;
 import org.lsposed.lspd.util.Utils;
 
 import java.util.Collections;
@@ -51,9 +53,20 @@ public class ApplicationServiceClient implements ILSPApplicationService, IBinder
         if (serviceClient == null && binder != null) {
             try {
                 serviceClient = new ApplicationServiceClient(service, niceName);
+                // API 102: give the daemon a way back into this process, so it can ask which module
+                // generation is running here and make the process reload it.
+                service.registerProcessService(LSPProcessService.getInstance());
             } catch (RemoteException e) {
                 Utils.logE("link to death error: ", e);
             }
+        }
+    }
+
+    @Override
+    public void registerProcessService(ILSPProcessService processService) {
+        try {
+            service.registerProcessService(processService);
+        } catch (RemoteException | NullPointerException ignored) {
         }
     }
 

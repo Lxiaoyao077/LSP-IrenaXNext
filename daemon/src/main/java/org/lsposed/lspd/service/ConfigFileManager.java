@@ -22,9 +22,11 @@ package org.lsposed.lspd.service;
 import static org.lsposed.lspd.service.ServiceManager.TAG;
 import static org.lsposed.lspd.service.ServiceManager.toGlobalNamespace;
 
+import android.content.pm.PackageParser;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.os.Binder;
+import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
 import android.os.RemoteException;
@@ -452,6 +454,18 @@ public class ConfigFileManager {
                 || targetApiVersion >= LSPModuleService.MIN_SUPPORTED_API_VERSION;
     }
 
+    /**
+     * Whether the module asked for its running processes to be reloaded onto the new build when the
+     * module app is updated (API 102). Off unless declared, since it means the old code gets asked
+     * to retire itself.
+     */
+    private static boolean isAutoHotReload(Properties properties) {
+        if (properties == null) {
+            return false;
+        }
+        return Boolean.parseBoolean(properties.getProperty("autoHotReload", "").trim());
+    }
+
     private static boolean isExceptionPassthrough(Properties properties) {
         if (properties == null) {
             return false;
@@ -482,6 +496,7 @@ public class ConfigFileManager {
                 file.legacy = false;
                 readName(apkFile, "META-INF/xposed/native_init.list", moduleLibraryNames);
                 file.exceptionPassthrough = isExceptionPassthrough(properties);
+                file.autoHotReload = isAutoHotReload(properties);
                 if (properties != null) {
                     // libxposed API version the module was built against. API 100 modules
                     // don't declare it, so 0 means "speaks API 100" (LSPModuleService#speaksApi101)
@@ -510,7 +525,26 @@ public class ConfigFileManager {
         file.preLoadedDexes = preLoadedDexes;
         file.moduleClassNames = moduleClassNames;
         file.moduleLibraryNames = moduleLibraryNames;
+        file.versionCode = readVersionCode(path);
         return file;
+    }
+
+    /**
+     * Reads the module's own version code out of its APK.
+     *
+     * <p>Nothing else in the module descriptor says which build the code came from, and API 102 hot
+     * reload needs the process to be able to name the generation it is running. Read here, at the
+     * same time the dex is, so the two always describe one build.
+     * </p>
+     */
+    private static long readVersionCode(String path) {
+        try {
+            var pkg = new PackageParser().parsePackage(toGlobalNamespace(path), 0, false);
+            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? pkg.getLongVersionCode() : pkg.versionCode;
+        } catch (Throwable e) {
+            Log.w(TAG, "Can not read version code of " + path, e);
+            return 0;
+        }
     }
 
     static boolean tryLock() {

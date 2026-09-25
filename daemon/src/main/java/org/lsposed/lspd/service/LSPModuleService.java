@@ -66,6 +66,68 @@ public class LSPModuleService extends IXposedService.Stub {
 
     private final static String TAG = "LSPosedModuleService";
 
+    // API 102: running targets and hot reload.
+    //
+    // Same story as the 101 wire below: the IXposedService AIDL this tree pins predates API 102, so
+    // these calls are not on the generated stub and arrive as raw transactions. The API 102 AIDL
+    // declares
+    //   getRunningTargets()                               = 13 -> wire 14
+    //   hotReloadModule(long, Bundle, IHotReloadCallback) = 14 -> wire 15
+    // which sits above everything the API 100 AIDL used (it stopped at 13), so nothing is shadowed
+    // and the module app's generated stub, built from the 102 AIDL, sends exactly these codes.
+    private static final int TRANSACTION_GET_RUNNING_TARGETS = 14;
+    private static final int TRANSACTION_HOT_RELOAD_MODULE = 15;
+
+    // Raw HOT_RELOAD_* status codes, mirrored from the API 102 AIDL. They go back over the wire as
+    // plain ints, so they have to match the module app's copy exactly.
+    static final int HOT_RELOAD_SUCCEEDED = 0;
+    static final int HOT_RELOAD_FAILED = 1;
+    static final int HOT_RELOAD_UNSUPPORTED = 2;
+    static final int HOT_RELOAD_IN_PROGRESS = 3;
+    static final int HOT_RELOAD_PROCESS_DIED = 4;
+
+    private static final String HOT_RELOAD_CALLBACK_DESCRIPTOR = "io.github.libxposed.service.IHotReloadCallback";
+    // oneway void onHotReloadResult(int status, String message) = 1
+    private static final int TRANSACTION_ON_HOT_RELOAD_RESULT = IBinder.FIRST_CALL_TRANSACTION + 1;
+
+    private static final ExecutorService hotReloadExecutor =
+            Executors.newSingleThreadExecutor(r -> new Thread(r, "module-hot-reload"));
+
+    /** One process this module is loaded into, as the daemon sees it. */
+    private static final class TargetKey {
+        final int uid;
+        final int pid;
+        final String processName;
+
+        TargetKey(int uid, int pid, String processName) {
+            this.uid = uid;
+            this.pid = pid;
+            this.processName = processName;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof TargetKey)) return false;
+            var key = (TargetKey) o;
+            return uid == key.uid && pid == key.pid && Objects.equals(processName, key.processName);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(uid, pid, processName);
+        }
+    }
+
+    // Target ids are handed out here rather than derived from the pid: a module must not be able to
+    // fabricate an id for a process it was never told about, and a pid reused by a later process
+    // must not inherit the old target. All three maps are guarded by targetLock.
+    private final Map<Long, TargetKey> targetsById = new HashMap<>();
+    private final Map<TargetKey, Long> targetIdsByKey = new HashMap<>();
+    private final Set<Long> reloadingTargets = new HashSet<>();
+    private final Set<Long> failedTargets = new HashSet<>();
+    private long nextTargetId = 0;
+    private final Object targetLock = new Object();
+
     private final static Set<Integer> uidSet = ConcurrentHashMap.newKeySet();
     private final static Set<ModuleBinderKey> sentBinderSet = ConcurrentHashMap.newKeySet();
     private final static Set<ModuleBinderKey> sendingBinderSet = ConcurrentHashMap.newKeySet();
@@ -293,8 +355,241 @@ public class LSPModuleService extends IXposedService.Stub {
                     reply.writeString(removeScope(packageName));
                 }
                 return true;
+            case TRANSACTION_GET_RUNNING_TARGETS: {
+                data.enforceInterface(getInterfaceDescriptor());
+                ensureModule();
+                var targets = collectRunningTargets();
+                reply.writeNoException();
+                reply.writeTypedList(targets);
+                return true;
+            }
+            case TRANSACTION_HOT_RELOAD_MODULE: {
+                data.enforceInterface(getInterfaceDescriptor());
+                var targetId = data.readLong();
+                var extras = data.readTypedObject(Bundle.CREATOR);
+                var callback = data.readStrongBinder();
+                try {
+                    submitHotReload(targetId, extras, callback);
+                    reply.writeNoException();
+                } catch (Exception e) {
+                    // A SecurityException for an id that is not this module's, a RemoteException for
+                    // a request that was never accepted: both have to reach the caller as an
+                    // exception, since the interface promises an id from getRunningTargets works.
+                    reply.writeException(e);
+                }
+                return true;
+            }
             default:
                 return super.onTransact(code, data, reply, flags);
+        }
+    }
+
+    // API 102: running targets
+
+    /**
+     * Every live process this module is loaded into, with the state of the module code it is running.
+     * Also refreshes the target registry, so ids are allocated for processes that just appeared and
+     * dropped once their process is gone.
+     */
+    @NonNull
+    private List<HookedProcess> collectRunningTargets() {
+        var packageName = loadedModule.packageName;
+        var installedApk = loadedModule.apkPath;
+        var result = new ArrayList<HookedProcess>();
+        synchronized (targetLock) {
+            var live = new HashSet<TargetKey>();
+            for (var process : LSPApplicationService.runningProcesses()) {
+                if (!LSPApplicationService.runsModule(process, packageName)) {
+                    continue;
+                }
+                var key = new TargetKey(process.uid, process.pid, process.processName);
+                live.add(key);
+                var targetId = targetIdsByKey.computeIfAbsent(key, k -> ++nextTargetId);
+
+                var service = process.processService;
+                String loadedApk = null;
+                long loadedVersionCode = -1;
+                if (service != null) {
+                    try {
+                        loadedApk = service.getLoadedModuleApk(packageName);
+                        if (loadedApk != null) {
+                            loadedVersionCode = service.getLoadedModuleVersionCode(packageName);
+                        }
+                    } catch (RemoteException e) {
+                        // died between being listed and being asked; it drops out of the registry
+                        // on the next pass anyway
+                        continue;
+                    }
+                }
+
+                int state;
+                if (reloadingTargets.contains(targetId)) {
+                    state = HookedProcess.TARGET_STATE_RELOADING;
+                } else if (failedTargets.contains(targetId)) {
+                    state = HookedProcess.TARGET_STATE_FAILED;
+                } else if (loadedApk != null && loadedApk.equals(installedApk)) {
+                    // The identity is the APK path, not the version code: an update always installs
+                    // under a new path, so this stays right even for a rebuild that reuses the code.
+                    state = HookedProcess.TARGET_STATE_UP_TO_DATE;
+                } else {
+                    state = HookedProcess.TARGET_STATE_STALE;
+                }
+                result.add(new HookedProcess(targetId, process.uid, process.pid, process.processName,
+                        state, loadedVersionCode));
+            }
+            targetIdsByKey.keySet().retainAll(live);
+            targetsById.entrySet().removeIf(entry -> !live.contains(entry.getValue()));
+            reloadingTargets.retainAll(targetsById.keySet());
+            failedTargets.retainAll(targetsById.keySet());
+        }
+        return result;
+    }
+
+    /**
+     * Validates a hot reload request and hands it to the worker. Returns as soon as the request is
+     * accepted: the interface says the outcome arrives through the callback, not as a return value.
+     */
+    private void submitHotReload(long targetId, @Nullable Bundle extras, @Nullable IBinder callback) throws RemoteException {
+        ensureModule();
+        final TargetKey target;
+        final boolean alreadyReloading;
+        synchronized (targetLock) {
+            target = targetsById.get(targetId);
+            if (target == null) {
+                throw new SecurityException("Unknown or expired target id " + targetId);
+            }
+            alreadyReloading = !reloadingTargets.add(targetId);
+            if (!alreadyReloading) {
+                failedTargets.remove(targetId);
+            }
+        }
+        if (alreadyReloading) {
+            // The interface has a status for saying so rather than a second queued request.
+            notifyHotReload(callback, HOT_RELOAD_IN_PROGRESS, null);
+            return;
+        }
+        hotReloadExecutor.execute(() -> {
+            var result = performHotReload(target, extras);
+            synchronized (targetLock) {
+                reloadingTargets.remove(targetId);
+                if (result.status == HOT_RELOAD_FAILED) {
+                    failedTargets.add(targetId);
+                } else {
+                    failedTargets.remove(targetId);
+                }
+            }
+            notifyHotReload(callback, result.status, result.message);
+        });
+    }
+
+    @NonNull
+    private HotReloadResult performHotReload(@NonNull TargetKey target, @Nullable Bundle extras) {
+        var service = LSPApplicationService.processServiceOf(target.uid, target.pid);
+        if (service == null) {
+            return new HotReloadResult(HOT_RELOAD_PROCESS_DIED, null);
+        }
+        try {
+            return service.hotReloadModule(loadedModule.packageName, extras);
+        } catch (RemoteException e) {
+            return new HotReloadResult(HOT_RELOAD_PROCESS_DIED, null);
+        } catch (Throwable t) {
+            return new HotReloadResult(HOT_RELOAD_FAILED, t.getMessage());
+        }
+    }
+
+    /**
+     * Reports an outcome on a module app's {@code IHotReloadCallback}.
+     *
+     * <p>Written out by hand for the same reason the request is read by hand: the pinned AIDL has no
+     * such callback, so there is no compiled stub to call. The method is {@code oneway}, so the
+     * transaction is fired and forgotten and a dead module app cannot block the worker.
+     * </p>
+     */
+    private static void notifyHotReload(@Nullable IBinder callback, int status, @Nullable String message) {
+        if (callback == null) return;
+        var data = Parcel.obtain();
+        try {
+            data.writeInterfaceToken(HOT_RELOAD_CALLBACK_DESCRIPTOR);
+            data.writeInt(status);
+            data.writeString(message);
+            callback.transact(TRANSACTION_ON_HOT_RELOAD_RESULT, data, null, IBinder.FLAG_ONEWAY);
+        } catch (RemoteException e) {
+            Log.w(TAG, "failed to report hot reload result", e);
+        } finally {
+            data.recycle();
+        }
+    }
+
+    /**
+     * Reloads the module in every process it is loaded into. Called when the module APK changed and
+     * the module opted into it, so there is no callback: failures still show up as
+     * {@code TARGET_STATE_FAILED} on the next {@code getRunningTargets()}.
+     */
+    void autoReloadRunningTargets() {
+        // Refresh first: an update can be the first thing the daemon hears about this module, so
+        // nothing may have called getRunningTargets() and allocated the ids yet.
+        collectRunningTargets();
+        final Map<Long, TargetKey> targets;
+        synchronized (targetLock) {
+            targets = new HashMap<>(targetsById);
+        }
+        for (var entry : targets.entrySet()) {
+            var targetId = entry.getKey();
+            var target = entry.getValue();
+            var service = LSPApplicationService.processServiceOf(target.uid, target.pid);
+            if (service == null) {
+                continue;
+            }
+            synchronized (targetLock) {
+                if (!reloadingTargets.add(targetId)) {
+                    continue;
+                }
+                failedTargets.remove(targetId);
+            }
+            try {
+                var result = service.hotReloadModule(loadedModule.packageName, null);
+                synchronized (targetLock) {
+                    reloadingTargets.remove(targetId);
+                    if (result.status == HOT_RELOAD_FAILED) {
+                        failedTargets.add(targetId);
+                    }
+                }
+            } catch (Throwable e) {
+                // Nothing asked for this reload, so a dead process or a broken module must not be
+                // able to take the daemon down with it - it just shows up as a failed target.
+                Log.w(TAG, "auto hot reload of " + loadedModule.packageName + " in " + target.processName, e);
+                synchronized (targetLock) {
+                    reloadingTargets.remove(targetId);
+                    failedTargets.add(targetId);
+                }
+            }
+        }
+    }
+
+    /**
+     * Reloads the running processes of a module that just got updated, when it asked for that.
+     *
+     * <p>Called from the package-changed path, after the module cache has been refreshed, so the new
+     * processes get dex from the build that was just installed.
+     * </p>
+     */
+    static void autoHotReloadModule(@NonNull String packageName) {
+        var module = ConfigManager.getInstance().getModuleByPackage(packageName);
+        if (module == null || module.file == null) {
+            return;
+        }
+        // Hot reload is an API 102 RPC and it asks the old code to retire itself, so it only happens
+        // for modules that are both built for it and opted in.
+        if (module.file.targetApiVersion < XposedInterface.API_102 || !module.file.autoHotReload) {
+            return;
+        }
+        LSPModuleService service;
+        synchronized (serviceMap) {
+            service = serviceMap.get(module);
+        }
+        if (service != null) {
+            Log.d(TAG, "auto hot reloading " + packageName);
+            service.autoReloadRunningTargets();
         }
     }
 

@@ -218,8 +218,13 @@ public class LSPosedService extends ILSPosedService.Stub {
             var scope = ConfigManager.getInstance().getModuleScope(packageName);
             boolean systemModule = scope != null && scope.parallelStream().anyMatch(app -> app.packageName.equals("system"));
             boolean enabled = ConfigManager.getInstance().isModuleEnabledForUser(packageName, userId);
-            if (!(Intent.ACTION_UID_REMOVED.equals(action) || Intent.ACTION_PACKAGE_FULLY_REMOVED.equals(action) || allUsers))
+            if (!(Intent.ACTION_UID_REMOVED.equals(action) || Intent.ACTION_PACKAGE_FULLY_REMOVED.equals(action) || allUsers)) {
                 LSPNotificationManager.notifyModuleUpdated(packageName, userId, enabled, systemModule);
+                // API 102: modules that opted in get their running processes moved onto the build
+                // that was just installed. Safe to do here because the module cache was refreshed
+                // earlier in this same dispatch, so the processes are served the new dex.
+                LSPModuleService.autoHotReloadModule(packageName);
+            }
         }
     }
 

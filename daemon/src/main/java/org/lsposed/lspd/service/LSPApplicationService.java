@@ -33,6 +33,7 @@ import androidx.annotation.NonNull;
 
 import org.lsposed.lspd.models.Module;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +51,12 @@ public class LSPApplicationService extends ILSPApplicationService.Stub {
         final int pid;
         final String processName;
         final IBinder heartBeat;
+        /**
+         * The process' own service, registered once it has this application service (API 102). The
+         * daemon needs it to ask whether the process is running a stale module generation and to
+         * make it reload; it is null until the process gets that far, and again if it never does.
+         */
+        volatile ILSPProcessService processService;
 
         ProcessInfo(int uid, int pid, String processName, IBinder heartBeat) throws RemoteException {
             this.uid = uid;
@@ -114,6 +121,40 @@ public class LSPApplicationService extends ILSPApplicationService.Stub {
         } catch (RemoteException e) {
             return false;
         }
+    }
+
+    @Override
+    public void registerProcessService(ILSPProcessService processService) throws RemoteException {
+        ensureRegistered().processService = processService;
+    }
+
+    /** Every process that currently holds this application service, i.e. every injected process. */
+    @NonNull
+    static List<ProcessInfo> runningProcesses() {
+        return new ArrayList<>(processes.values());
+    }
+
+    /** The process' own service, or null when it has not registered one (or has died). */
+    @Nullable
+    static ILSPProcessService processServiceOf(int uid, int pid) {
+        var processInfo = processes.get(new Pair<>(uid, pid));
+        return processInfo == null ? null : processInfo.processService;
+    }
+
+    /**
+     * Whether {@code process} is one the daemon loaded {@code packageName} into. Answered from the
+     * scope cache, which is what decided the process' module list in the first place.
+     */
+    static boolean runsModule(@NonNull ProcessInfo process, @NonNull String packageName) {
+        var modules = process.uid == Process.SYSTEM_UID && "system".equals(process.processName)
+                ? ConfigManager.getInstance().getModulesForSystemServer()
+                : ConfigManager.getInstance().getModulesForProcess(process.processName, process.uid);
+        for (var module : modules) {
+            if (packageName.equals(module.packageName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private List<Module> getAllModulesList() throws RemoteException {

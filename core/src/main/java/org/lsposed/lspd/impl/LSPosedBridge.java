@@ -12,12 +12,15 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import de.robv.android.xposed.XposedBridge;
 import io.github.libxposed.api.XposedInterface;
@@ -505,6 +508,42 @@ public class LSPosedBridge {
         return new HookIdKey(handle.moduleId, record.executable, record.id);
     }
 
+    /**
+     * Every handle a module still owns, named or not. {@link #hookIds} only knows the ones a module
+     * gave an id to; a hot reload has to hand over all of them, since the new generation can only
+     * retire the hooks it is told about.
+     */
+    private static final Map<String, Set<HookHandleImpl>> moduleHandles = new HashMap<>();
+
+    private static void trackLocked(HookHandleImpl handle) {
+        if (handle.moduleId == null) {
+            return;
+        }
+        moduleHandles
+                .computeIfAbsent(handle.moduleId, k -> Collections.newSetFromMap(new IdentityHashMap<>()))
+                .add(handle);
+    }
+
+    private static void untrackLocked(HookHandleImpl handle) {
+        if (handle.moduleId == null) {
+            return;
+        }
+        var handles = moduleHandles.get(handle.moduleId);
+        if (handles != null && handles.remove(handle) && handles.isEmpty()) {
+            moduleHandles.remove(handle.moduleId);
+        }
+    }
+
+    /** The live handles of one module, for {@code HotReloadedParam#getOldHookHandles()}. */
+    @NonNull
+    public static List<XposedInterface.HookHandle> handlesForModule(@NonNull String moduleId) {
+        synchronized (hookIdLock) {
+            var handles = moduleHandles.get(moduleId);
+            return handles == null ? new ArrayList<XposedInterface.HookHandle>()
+                    : new ArrayList<XposedInterface.HookHandle>(handles);
+        }
+    }
+
     /** Applies the exception mode to a hooker the same way on the way in and on the way back. */
     private static XposedInterface.Hooker wrapHooker(XposedInterface context,
                                                      XposedInterface.ExceptionMode mode,
@@ -675,6 +714,7 @@ public class LSPosedBridge {
                 if (!live) return;
                 live = false;
                 releaseIdLocked(this);
+                untrackLocked(this);
                 HookBridge.unhookMethod(HookBridge.API_MODE_101, record.executable, record.hooker);
             }
         }
@@ -714,8 +754,10 @@ public class LSPosedBridge {
             }
             live = false;
             releaseIdLocked(this);
+            untrackLocked(this);
             var handle = new HookHandleImpl(moduleId, replacement);
             claimIdLocked(handle);
+            trackLocked(handle);
             return handle;
         }
     }

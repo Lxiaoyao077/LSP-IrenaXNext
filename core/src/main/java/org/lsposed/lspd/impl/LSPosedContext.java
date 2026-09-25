@@ -35,6 +35,8 @@ import java.nio.ByteBuffer;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -135,81 +137,127 @@ public class LSPosedContext implements XposedInterface {
     public static boolean loadModule(ActivityThread at, Module module) {
         try {
             Log.d(TAG, "Loading module " + module.packageName);
-            var sb = new StringBuilder();
-            var abis = Process.is64Bit() ? Build.SUPPORTED_64_BIT_ABIS : Build.SUPPORTED_32_BIT_ABIS;
-            for (String abi : abis) {
-                sb.append(module.apkPath).append("!/lib/").append(abi).append(File.pathSeparator);
+            var mcl = createClassLoader(module);
+            if (mcl == null) {
+                return false;
             }
-            var librarySearchPath = sb.toString();
-            var initLoader = XposedModule.class.getClassLoader();
-            // A module targeting API 102 is not allowed to call the legacy de.robv API. This
-            // loader's parent is the framework's own loader, which carries the legacy bridge, so
-            // refusing to resolve those names here is what actually enforces it.
-            var blockLegacyApi = module.file.targetApiVersion >= XposedInterface.API_102;
-            var mcl = LspModuleClassLoader.loadApk(module.apkPath, module.file.preLoadedDexes, librarySearchPath, initLoader, blockLegacyApi);
-            if (mcl.loadClass(XposedModule.class.getName()).getClassLoader() != initLoader) {
+            if (mcl.loadClass(XposedModule.class.getName()).getClassLoader() != XposedModule.class.getClassLoader()) {
                 Log.e(TAG, "  Cannot load module: " + module.packageName);
                 Log.e(TAG, "  The Xposed API classes are compiled into the module's APK.");
                 Log.e(TAG, "  This may cause strange issues and must be fixed by the module developer.");
                 return false;
             }
             module.file.moduleLibraryNames.forEach(NativeAPI::recordNativeEntrypoint);
-            var defaultExceptionMode = module.file.exceptionPassthrough ? ExceptionMode.PASSTHROUGH : ExceptionMode.PROTECTIVE;
-            var ctx = new LSPosedContext(module.packageName, module.applicationInfo, module.service, defaultExceptionMode);
-            for (var entry : module.file.moduleClassNames) {
+            var context = contextOf(module);
+            var instances = instantiate(mcl, context, module);
+            for (var instance : instances) {
+                instance.onModuleLoaded(new ModuleLoadedParamImpl());
+            }
+            adopt(instances);
+            // Published last: until a generation is registered the process does not count as running
+            // this module, so the daemon cannot ask for a hot reload into a half-built state.
+            LSPHotReload.register(new LSPHotReload.Generation(module.packageName, module.apkPath, mcl,
+                    instances, module.file.versionCode));
+            Log.d(TAG, "Loaded module " + module.packageName + ": " + context);
+        } catch (Throwable e) {
+            Log.d(TAG, "Loading module " + module.packageName, e);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Builds a private class loader over the module's preloaded dex.
+     *
+     * <p>Split out of {@link #loadModule} because a hot reload needs exactly this and nothing else
+     * from it: the new generation gets its own loader, over dex preloaded from the updated APK,
+     * while the old generation's loader stays alive until its hooks are gone.
+     * </p>
+     */
+    @Nullable
+    static ClassLoader createClassLoader(@NonNull Module module) {
+        var sb = new StringBuilder();
+        var abis = Process.is64Bit() ? Build.SUPPORTED_64_BIT_ABIS : Build.SUPPORTED_32_BIT_ABIS;
+        for (String abi : abis) {
+            sb.append(module.apkPath).append("!/lib/").append(abi).append(File.pathSeparator);
+        }
+        var librarySearchPath = sb.toString();
+        var initLoader = XposedModule.class.getClassLoader();
+        // A module targeting API 102 is not allowed to call the legacy de.robv API. This loader's
+        // parent is the framework's own loader, which carries the legacy bridge, so refusing to
+        // resolve those names here is what actually enforces it.
+        var blockLegacyApi = module.file.targetApiVersion >= XposedInterface.API_102;
+        return LspModuleClassLoader.loadApk(module.apkPath, module.file.preLoadedDexes,
+                librarySearchPath, initLoader, blockLegacyApi);
+    }
+
+    /** The interface handed to one module's entry classes for the process they are loaded in. */
+    @NonNull
+    static LSPosedContext contextOf(@NonNull Module module) {
+        var defaultExceptionMode = module.file.exceptionPassthrough
+                ? ExceptionMode.PASSTHROUGH : ExceptionMode.PROTECTIVE;
+        return new LSPosedContext(module.packageName, module.applicationInfo, module.service, defaultExceptionMode);
+    }
+
+    /**
+     * Builds the entry class instances of {@code module} over {@code mcl}, <b>without</b> calling any
+     * lifecycle callback: the caller decides whether this generation gets {@code onModuleLoaded}
+     * (first load) or {@code onHotReloaded} (hot reload). A class that fails to build is skipped
+     * rather than failing the whole module.
+     */
+    @NonNull
+    static List<XposedModule> instantiate(@NonNull ClassLoader mcl, @NonNull LSPosedContext context,
+                                          @NonNull Module module) {
+        var instances = new ArrayList<XposedModule>();
+        for (var entry : module.file.moduleClassNames) {
+            try {
                 var moduleClass = mcl.loadClass(entry);
                 Log.d(TAG, "  Loading class " + moduleClass);
                 if (!XposedModule.class.isAssignableFrom(moduleClass)) {
                     Log.e(TAG, "    This class doesn't implement any sub-interface of XposedModule, skipping it");
                     continue;
                 }
+                // API 100 modules take a (XposedInterface, ModuleLoadedParam) ctor, API 101 modules
+                // use no-arg + attachFramework. try API 100 first, fall back to API 101, decided per
+                // module so nobody has to configure anything.
+                XposedModule instance;
                 try {
-                    // API 100 modules take a (XposedInterface, ModuleLoadedParam) ctor, API 101
-                    // modules use no-arg + attachFramework. try API 100 first, fall back to
-                    // API 101, decided per module so nobody has to configure anything.
-                    XposedModule moduleContext;
-                    try {
-                        var moduleEntry = moduleClass.getConstructor(XposedInterface.class,
-                                XposedModuleInterface.ModuleLoadedParam.class);
-                        moduleContext = (XposedModule) moduleEntry.newInstance(ctx, new XposedModuleInterface.ModuleLoadedParam() {
-                            @Override
-                            public boolean isSystemServer() {
-                                return LSPosedContext.isSystemServer;
-                            }
-
-                            @NonNull
-                            @Override
-                            public String getProcessName() {
-                                return LSPosedContext.processName;
-                            }
-                        });
-                    } catch (NoSuchMethodException e) {
-                        moduleContext = (XposedModule) moduleClass.getConstructor().newInstance();
-                        moduleContext.attachFramework(ctx);
-                    }
-                    moduleContext.onModuleLoaded(new XposedModuleInterface.ModuleLoadedParam() {
-                        @Override
-                        public boolean isSystemServer() {
-                            return LSPosedContext.isSystemServer;
-                        }
-
-                        @NonNull
-                        @Override
-                        public String getProcessName() {
-                            return LSPosedContext.processName;
-                        }
-                    });
-                    modules.add(moduleContext);
-                } catch (Throwable e) {
-                    Log.e(TAG, "    Failed to load class " + moduleClass, e);
+                    var moduleEntry = moduleClass.getConstructor(XposedInterface.class,
+                            XposedModuleInterface.ModuleLoadedParam.class);
+                    instance = (XposedModule) moduleEntry.newInstance(context, new ModuleLoadedParamImpl());
+                } catch (NoSuchMethodException e) {
+                    instance = (XposedModule) moduleClass.getConstructor().newInstance();
+                    instance.attachFramework(context);
                 }
+                instances.add(instance);
+            } catch (Throwable e) {
+                Log.e(TAG, "    Failed to load class " + entry, e);
             }
-            Log.d(TAG, "Loaded module " + module.packageName + ": " + ctx);
-        } catch (Throwable e) {
-            Log.d(TAG, "Loading module " + module.packageName, e);
-            return false;
         }
-        return true;
+        return instances;
+    }
+
+    /** Puts a freshly built generation in place of the retired one for lifecycle dispatch. */
+    static void adopt(@NonNull List<XposedModule> instances) {
+        modules.addAll(instances);
+    }
+
+    /** Stops lifecycle callbacks from reaching a generation that is being replaced. */
+    static void retire(@NonNull List<XposedModule> instances) {
+        modules.removeAll(instances);
+    }
+
+    static final class ModuleLoadedParamImpl implements XposedModuleInterface.ModuleLoadedParam {
+        @Override
+        public boolean isSystemServer() {
+            return LSPosedContext.isSystemServer;
+        }
+
+        @NonNull
+        @Override
+        public String getProcessName() {
+            return LSPosedContext.processName;
+        }
     }
 
     @NonNull
