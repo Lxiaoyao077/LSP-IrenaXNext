@@ -32,7 +32,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LSPosed"
+rootProject.name = "Lsposed-Irena XNext"
 include(
     ":app",
     ":core",

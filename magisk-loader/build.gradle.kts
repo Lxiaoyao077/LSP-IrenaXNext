@@ -30,7 +30,9 @@ plugins {
     alias(libs.plugins.lsplugin.resopt)
 }
 
-val moduleName = "LSPosed"
+// No spaces: this becomes the zip file name, unlike the displayed module name
+// in module.prop, which is "Lsposed-Irena XNext".
+val moduleName = "Lsposed-IrenaXNext"
 val moduleBaseId = "lsposed"
 val authors = "Irena & a bunch of contributors & Lxyao"
 
@@ -113,7 +115,7 @@ dependencies {
 }
 
 val zipAll = tasks.register("zipAll", fun Task.() {
-    group = "LSPosed"
+    group = "Lsposed-Irena XNext"
 })
 
 androidComponents.onVariants(androidComponents.selector().all()) { variant ->
@@ -128,12 +130,12 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
     val magiskDir = layout.buildDirectory.dir("magisk/$variantLowered")
 
     val moduleId = "${flavorLowered}_$moduleBaseId"
-    val zipFileName = "$moduleName-v$verName-$verCode-IrenaX-$buildTypeLowered.zip"
+    val zipFileName = "$moduleName-v$verName-$verCode-$buildTypeLowered.zip"
 
     val prepareMagiskFilesTask = tasks.register<Sync>(
         "prepareMagiskFiles$variantCapped"
     ) {
-        group = "LSPosed"
+        group = "Lsposed-Irena XNext"
         dependsOn(
             "assemble$variantCapped",
             ":app:package$buildTypeCapped",
@@ -207,7 +209,7 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
     }
 
     val zipTask = tasks.register<Zip>("zip${variantCapped}", fun Zip.() {
-        group = "LSPosed"
+        group = "Lsposed-Irena XNext"
         dependsOn(prepareMagiskFilesTask)
         archiveFileName = zipFileName
         destinationDirectory = file("$projectDir/release")
@@ -221,12 +223,12 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
     val adb: String = androidComponents.sdkComponents.adb.get().asFile.absolutePath
     val zipFilePath = zipTask.get().archiveFile.get().asFile.absolutePath
     val pushTask = tasks.register<Exec>("push${variantCapped}", fun Exec.() {
-        group = "LSPosed"
+        group = "Lsposed-Irena XNext"
         dependsOn(zipTask)
         commandLine(adb, "push", zipFilePath, "/data/local/tmp/")
     })
     val flashMagiskTask = tasks.register<Exec>("flashMagisk${variantCapped}", fun Exec.() {
-        group = "LSPosed"
+        group = "Lsposed-Irena XNext"
         dependsOn(pushTask)
         commandLine(
             adb, "shell", "su", "-c",
@@ -234,12 +236,12 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
         )
     })
     tasks.register<Exec>("flashMagiskAndReboot${variantCapped}", fun Exec.() {
-        group = "LSPosed"
+        group = "Lsposed-Irena XNext"
         dependsOn(flashMagiskTask)
         commandLine(adb, "reboot")
     })
     val flashKsuTask = tasks.register<Exec>("flashKsu${variantCapped}", fun Exec.() {
-        group = "LSPosed"
+        group = "Lsposed-Irena XNext"
         dependsOn(pushTask)
         commandLine(
             adb, "shell", "su", "-c",
@@ -247,7 +249,7 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
         )
     })
     tasks.register<Exec>("flashKsuAndReboot${variantCapped}", fun Exec.() {
-        group = "LSPosed"
+        group = "Lsposed-Irena XNext"
         dependsOn(flashKsuTask)
         commandLine(adb, "reboot")
     })
@@ -255,18 +257,18 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
 
 val adb: String = androidComponents.sdkComponents.adb.get().asFile.absolutePath
 val killLspd = tasks.register<Exec>("killLspd") {
-    group = "LSPosed"
+    group = "Lsposed-Irena XNext"
     commandLine(adb, "shell", "su", "-c", "killall", "lspd")
     isIgnoreExitValue = true
 }
 val pushDaemon = tasks.register<Exec>("pushDaemon") {
-    group = "LSPosed"
+    group = "Lsposed-Irena XNext"
     dependsOn(":daemon:assembleDebug")
     workingDir(project(":daemon").layout.buildDirectory.dir("outputs/apk/debug"))
     commandLine(adb, "push", "daemon-debug.apk", "/data/local/tmp/daemon.apk")
 }
 val pushDaemonNative = tasks.register<Exec>("pushDaemonNative") {
-    group = "LSPosed"
+    group = "Lsposed-Irena XNext"
     dependsOn(":daemon:assembleDebug")
     doFirst {
         val abi: String = ByteArrayOutputStream().use { outputStream ->
@@ -281,7 +283,7 @@ val pushDaemonNative = tasks.register<Exec>("pushDaemonNative") {
     commandLine(adb, "push", "libdaemon.so", "/data/local/tmp/libdaemon.so")
 }
 val reRunDaemon = tasks.register<Exec>("reRunDaemon") {
-    group = "LSPosed"
+    group = "Lsposed-Irena XNext"
     dependsOn(pushDaemon, pushDaemonNative, killLspd)
     // tricky to pass a minus number to avoid the injection warning
     commandLine(
@@ -292,7 +294,7 @@ val reRunDaemon = tasks.register<Exec>("reRunDaemon") {
 }
 val tmpApk = "/data/local/tmp/manager.apk"
 val pushApk = tasks.register<Exec>("pushApk") {
-    group = "LSPosed"
+    group = "Lsposed-Irena XNext"
     dependsOn(":app:assembleDebug")
     doFirst {
         serviceOf<ExecOperations>().exec {
@@ -303,7 +305,7 @@ val pushApk = tasks.register<Exec>("pushApk") {
     commandLine(adb, "push", "app-debug.apk", tmpApk)
 }
 tasks.register<Exec>("openApp") {
-    group = "LSPosed"
+    group = "Lsposed-Irena XNext"
     val apiLevelOutput = ByteArrayOutputStream()
     serviceOf<ExecOperations>().exec {
         commandLine("adb", "shell", "getprop", "ro.build.version.sdk")
@@ -325,7 +327,7 @@ tasks.register<Exec>("openApp") {
     )
 }
 tasks.register("reRunApp", fun Task.() {
-    group = "LSPosed"
+    group = "Lsposed-Irena XNext"
     dependsOn(pushApk)
     finalizedBy(reRunDaemon)
 })
