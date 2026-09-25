@@ -242,14 +242,24 @@ public class LSPosedContext implements XposedInterface {
                 // API 100 modules take a (XposedInterface, ModuleLoadedParam) ctor, API 101 modules
                 // use no-arg + attachFramework. try API 100 first, fall back to API 101, decided per
                 // module so nobody has to configure anything.
+                //
+                // Declared constructors, forced accessible, rather than public ones: an entry class
+                // is instantiated reflectively by contract, so a module whose entry constructor is
+                // not public is not thereby unloadable.
                 XposedModule instance;
                 try {
-                    var moduleEntry = moduleClass.getConstructor(XposedInterface.class,
+                    var moduleEntry = moduleClass.getDeclaredConstructor(XposedInterface.class,
                             XposedModuleInterface.ModuleLoadedParam.class);
+                    moduleEntry.setAccessible(true);
                     instance = (XposedModule) moduleEntry.newInstance(context, new ModuleLoadedParamImpl());
                 } catch (NoSuchMethodException e) {
-                    instance = (XposedModule) moduleClass.getConstructor().newInstance();
-                    instance.attachFramework(context);
+                    var noArg = moduleClass.getDeclaredConstructor();
+                    noArg.setAccessible(true);
+                    instance = (XposedModule) noArg.newInstance();
+                    // detach() is per entry: only the instance that calls it stops, so the
+                    // runnable carries this instance rather than the module as a whole.
+                    final var entry = instance;
+                    instance.attachFramework(context, () -> detach(entry));
                 }
                 instances.add(instance);
             } catch (Throwable e) {
@@ -267,6 +277,19 @@ public class LSPosedContext implements XposedInterface {
     /** Stops lifecycle callbacks from reaching a generation that is being replaced. */
     static void retire(@NonNull List<XposedModule> instances) {
         modules.removeAll(instances);
+    }
+
+    /**
+     * Stops lifecycle callbacks from reaching one entry instance (API 102 {@code detach()}).
+     *
+     * <p>{@link #modules} is the framework's only strong reference to an entry instance, so
+     * removing it here is the whole of withdrawing: every dispatch iterates that set. The
+     * entry's siblings stay in it and keep receiving their callbacks.</p>
+     */
+    static void detach(@NonNull XposedModule instance) {
+        if (modules.remove(instance)) {
+            Log.d(TAG, "Detached entry " + instance.getClass().getName());
+        }
     }
 
     static final class ModuleLoadedParamImpl implements XposedModuleInterface.ModuleLoadedParam {

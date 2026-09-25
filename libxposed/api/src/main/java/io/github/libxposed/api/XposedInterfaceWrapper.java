@@ -27,6 +27,11 @@ import io.github.libxposed.api.utils.DexParser;
 public class XposedInterfaceWrapper implements XposedInterface {
 
     private volatile XposedInterface mBase;
+    /**
+     * What {@link #detach()} runs, supplied by the framework when it attaches (API 102). Null
+     * when the framework attached without one, which is the API 101 path.
+     */
+    private volatile Runnable mDetachImpl;
 
     /**
      * Instantiates a wrapper without a base (API 101 style); the framework will attach the base
@@ -53,6 +58,49 @@ public class XposedInterfaceWrapper implements XposedInterface {
             throw new IllegalStateException("Framework already attached");
         }
         mBase = base;
+    }
+
+    /**
+     * Attaches the framework interface to the module, together with what {@link #detach()}
+     * will run. Modules <b>must not</b> call this method; it is reserved for framework
+     * implementations and may change without compatibility guarantees.
+     *
+     * @param base       The framework interface
+     * @param detachImpl The implementation of {@link #detach()}
+     */
+    @SuppressWarnings("unused")
+    public final void attachFramework(@NonNull XposedInterface base, @NonNull Runnable detachImpl) {
+        if (mBase != null) {
+            throw new IllegalStateException("Framework already attached");
+        }
+        mBase = base;
+        mDetachImpl = detachImpl;
+    }
+
+    /**
+     * Stops all subsequent lifecycle callbacks for the <b>current module entry</b> in the current
+     * process. After this method is called the framework drops its reference to this entry
+     * instance and stops invoking lifecycle callbacks on it. Only lifecycle callbacks are
+     * affected; every {@link XposedInterface} API stays fully functional.
+     *
+     * <p>If the module declares several entry classes, only the one calling this method is
+     * affected - its siblings carry on. That is what lets a module retire part of itself, which
+     * hot reload needs: a generation cannot be replaced while some of its entries are still
+     * bound to receive callbacks.</p>
+     *
+     * <p>This method is idempotent. It does not unhook anything: a hook survives its entry, and
+     * the module is expected to unhook what it wants gone.</p>
+     */
+    public final void detach() {
+        ensureAttached();
+        var impl = mDetachImpl;
+        if (impl == null) {
+            // Attached the API 101 way, so the framework has nothing to withdraw from. A module
+            // that targets 102 is never attached that way; throwing here would turn a version
+            // mismatch into a crash inside a module's own lifecycle call.
+            return;
+        }
+        impl.run();
     }
 
     private void ensureAttached() {
