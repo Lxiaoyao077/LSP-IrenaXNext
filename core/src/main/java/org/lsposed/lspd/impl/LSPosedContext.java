@@ -71,6 +71,14 @@ public class LSPosedContext implements XposedInterface {
         this.mDefaultExceptionMode = defaultExceptionMode;
     }
 
+    /**
+     * The package name of the module this context belongs to. It is the module id hook ids are
+     * scoped by, so that two modules cannot replace each other's hooks.
+     */
+    String getPackageName() {
+        return mPackageName;
+    }
+
     // module lifecycle dispatch: fire every callback, modules react to what they override.
 
     public static void callOnModuleLoaded(XposedModuleInterface.ModuleLoadedParam param) {
@@ -134,7 +142,11 @@ public class LSPosedContext implements XposedInterface {
             }
             var librarySearchPath = sb.toString();
             var initLoader = XposedModule.class.getClassLoader();
-            var mcl = LspModuleClassLoader.loadApk(module.apkPath, module.file.preLoadedDexes, librarySearchPath, initLoader);
+            // A module targeting API 102 is not allowed to call the legacy de.robv API. This
+            // loader's parent is the framework's own loader, which carries the legacy bridge, so
+            // refusing to resolve those names here is what actually enforces it.
+            var blockLegacyApi = module.file.targetApiVersion >= XposedInterface.API_102;
+            var mcl = LspModuleClassLoader.loadApk(module.apkPath, module.file.preLoadedDexes, librarySearchPath, initLoader, blockLegacyApi);
             if (mcl.loadClass(XposedModule.class.getName()).getClassLoader() != initLoader) {
                 Log.e(TAG, "  Cannot load module: " + module.packageName);
                 Log.e(TAG, "  The Xposed API classes are compiled into the module's APK.");

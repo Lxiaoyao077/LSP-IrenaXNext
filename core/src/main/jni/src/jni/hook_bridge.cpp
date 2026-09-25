@@ -22,10 +22,13 @@
 #include "lsplant.hpp"
 #include <parallel_hashmap/phmap.h>
 #include <limits>
+#include <map>
 #include <memory>
 #include <shared_mutex>
 #include <mutex>
 #include <set>
+#include <string>
+#include <vector>
 #include <unistd.h>
 
 using namespace lsplant;
@@ -624,6 +627,21 @@ constexpr int API_MODE_LEGACY = 0;
 constexpr int API_MODE_100 = 1;
 constexpr int API_MODE_101 = 2;
 
+// The callback registry an apiMode addresses, or nullptr for an unknown mode. Every mode owns its
+// own multimap, so a replacement has to be applied to the one the mode routes through.
+std::multimap<jint, jobject, std::greater<>> *CallbacksFor(HookItem *hook_item, jint apiMode) {
+    switch (apiMode) {
+        case API_MODE_LEGACY:
+            return &hook_item->legacy_callbacks;
+        case API_MODE_100:
+            return &hook_item->modern_callbacks;
+        case API_MODE_101:
+            return &hook_item->api101_callbacks;
+        default:
+            return nullptr;
+    }
+}
+
 LSP_DEF_NATIVE_METHOD(jboolean, HookBridge, hookMethod, jint apiMode, jobject hookMethod,
                       jclass hooker, jint priority, jobject callback) {
     bool newHook = false;
@@ -831,6 +849,61 @@ LSP_DEF_NATIVE_METHOD(jobjectArray, HookBridge, callbackSnapshot101, jobject met
     return res;
 }
 
+LSP_DEF_NATIVE_METHOD(jboolean, HookBridge, replaceCallback, jint apiMode, jobject hookMethod,
+                      jobject oldCallback, jobject newCallback, jint newPriority) {
+    auto target = env->FromReflectedMethod(hookMethod);
+    HookItem * hook_item = nullptr;
+    hooked_methods.if_contains(target, [&hook_item](const auto &it) {
+        hook_item = it.second.get();
+    });
+    if (!hook_item) return JNI_FALSE;
+    jobject backup = hook_item->GetBackup();
+    if (!backup) return JNI_FALSE;
+    auto callbacks = CallbacksFor(hook_item, apiMode);
+    if (!callbacks) return JNI_FALSE;
+    JNIMonitor monitor(env, backup);
+    for (auto i = callbacks->begin(); i != callbacks->end(); ++i) {
+        if (env->IsSameObject(i->second, oldCallback)) {
+            auto replacement = env->NewGlobalRef(newCallback);
+            if (!replacement) return JNI_FALSE;
+            env->DeleteGlobalRef(i->second);
+            callbacks->erase(i);
+            // Re-inserted at the priority the old registration occupied, which is what keeps the
+            // replacement where the handle promised it would stay instead of moving it behind its
+            // equals.
+            callbacks->emplace(newPriority, replacement);
+            return JNI_TRUE;
+        }
+    }
+    // The old callback is not registered any more: the handle that asked has been superseded, and
+    // nothing was changed here.
+    return JNI_FALSE;
+}
+
+LSP_DEF_NATIVE_METHOD(jobjectArray, HookBridge, legacyApiPrefixes) {
+    static constexpr char kLegacyApiPackage[] = "de.robv.android.xposed.";
+    auto &obfs_map = ConfigBridge::GetInstance()->obfuscation_map();
+    std::vector<std::string> prefixes;
+    // The map is keyed by the source name, so exactly one entry covers the whole legacy package.
+    // AndroidAppHelper and the XResources family sit in the same rewrite table but are not part of
+    // what API 102 refuses, so they are deliberately left out.
+    if (auto it = obfs_map.find(kLegacyApiPackage); it != obfs_map.end() && !it->second.empty()) {
+        prefixes.push_back(it->second);
+    } else {
+        // Obfuscation is off, or the map never reached this process: the names a module asks for
+        // are the ones in source.
+        prefixes.emplace_back(kLegacyApiPackage);
+    }
+    auto string_class = env->FindClass("java/lang/String");
+    auto res = env->NewObjectArray((jsize) prefixes.size(), string_class, nullptr);
+    for (jsize i = 0; i < (jsize) prefixes.size(); ++i) {
+        auto prefix = env->NewStringUTF(prefixes[i].c_str());
+        env->SetObjectArrayElement(res, i, prefix);
+        env->DeleteLocalRef(prefix);
+    }
+    return res;
+}
+
 LSP_DEF_NATIVE_METHOD(jint, HookBridge, gettid) {
     return gettid();
 }
@@ -838,6 +911,9 @@ LSP_DEF_NATIVE_METHOD(jint, HookBridge, gettid) {
 static JNINativeMethod gMethods[] = {
     LSP_NATIVE_METHOD(HookBridge, hookMethod, "(ILjava/lang/reflect/Executable;Ljava/lang/Class;ILjava/lang/Object;)Z"),
     LSP_NATIVE_METHOD(HookBridge, unhookMethod, "(ILjava/lang/reflect/Executable;Ljava/lang/Object;)Z"),
+    LSP_NATIVE_METHOD(HookBridge, replaceCallback,
+                      "(ILjava/lang/reflect/Executable;Ljava/lang/Object;Ljava/lang/Object;I)Z"),
+    LSP_NATIVE_METHOD(HookBridge, legacyApiPrefixes, "()[Ljava/lang/String;"),
     LSP_NATIVE_METHOD(HookBridge, deoptimizeMethod, "(Ljava/lang/reflect/Executable;)Z"),
     LSP_NATIVE_METHOD(HookBridge, invokeOriginalMethod,
                       "(Ljava/lang/reflect/Executable;Ljava/lang/Object;[Ljava/lang/Object;Z)Ljava/lang/Object;"),

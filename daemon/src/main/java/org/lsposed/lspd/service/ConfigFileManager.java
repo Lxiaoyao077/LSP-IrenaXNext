@@ -439,7 +439,7 @@ public class ConfigFileManager {
         int minApiVersion = readApiVersion(properties, "minApiVersion");
         int targetApiVersion = readApiVersion(properties, "targetApiVersion");
         if (minApiVersion > LSPModuleService.XPOSED_API_VERSION) return null;
-        if (targetApiVersion < LSPModuleService.XPOSED_API_VERSION) return null;
+        if (targetApiVersion < LSPModuleService.MIN_SUPPORTED_API_VERSION) return null;
         return properties;
     }
 
@@ -449,7 +449,7 @@ public class ConfigFileManager {
         int minApiVersion = readApiVersion(properties, "minApiVersion");
         int targetApiVersion = readApiVersion(properties, "targetApiVersion");
         return minApiVersion > LSPModuleService.XPOSED_API_VERSION
-                || targetApiVersion >= LSPModuleService.XPOSED_API_VERSION;
+                || targetApiVersion >= LSPModuleService.MIN_SUPPORTED_API_VERSION;
     }
 
     private static boolean isExceptionPassthrough(Properties properties) {

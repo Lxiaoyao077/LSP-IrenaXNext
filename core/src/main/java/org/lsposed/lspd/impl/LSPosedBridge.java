@@ -13,7 +13,9 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import de.robv.android.xposed.XposedBridge;
@@ -465,17 +467,110 @@ public class LSPosedBridge {
         }
     }
 
+    // API 102 hook ids and atomic replacement
+
+    /** Identity of a hook a module can name again later: one id per module per executable. */
+    private record HookIdKey(String moduleId, Executable executable, String id) {
+    }
+
+    /** Every id currently claimed, so a later registration with the same one replaces it instead. */
+    private static final Map<HookIdKey, HookHandleImpl> hookIds = new HashMap<>();
+
+    /**
+     * Serialises everything that decides which handle owns a registration, and is held across the
+     * native swap so that a registration cannot slip between the lookup and the replacement.
+     */
+    private static final Object hookIdLock = new Object();
+
+    private static void claimIdLocked(HookHandleImpl handle) {
+        var key = keyOf(handle);
+        if (key != null) {
+            hookIds.put(key, handle);
+        }
+    }
+
+    private static void releaseIdLocked(HookHandleImpl handle) {
+        var key = keyOf(handle);
+        if (key != null) {
+            hookIds.remove(key, handle);
+        }
+    }
+
+    private static HookIdKey keyOf(HookHandleImpl handle) {
+        var record = handle.record;
+        if (handle.moduleId == null || record.id == null) {
+            return null;
+        }
+        return new HookIdKey(handle.moduleId, record.executable, record.id);
+    }
+
+    /** Applies the exception mode to a hooker the same way on the way in and on the way back. */
+    private static XposedInterface.Hooker wrapHooker(XposedInterface context,
+                                                     XposedInterface.ExceptionMode mode,
+                                                     XposedInterface.Hooker hooker) {
+        return mode == XposedInterface.ExceptionMode.PROTECTIVE
+                ? new ProtectiveHooker(context, hooker) : hooker;
+    }
+
+    /** Refuses the origins and the hookers that cannot be hooked, before anything is installed. */
+    private static void checkHookable(Executable hookMethod, XposedInterface.Hooker hooker) {
+        if (Modifier.isAbstract(hookMethod.getModifiers())) {
+            throw new IllegalArgumentException("Cannot hook abstract methods: " + hookMethod);
+        } else if (hookMethod.getDeclaringClass().getClassLoader() == LSPosedContext.class.getClassLoader()) {
+            throw new IllegalArgumentException("Do not allow hooking inner methods");
+        } else if (hookMethod.getDeclaringClass() == Method.class && hookMethod.getName().equals("invoke")) {
+            throw new IllegalArgumentException("Cannot hook Method.invoke");
+        } else if (hooker == null) {
+            throw new IllegalArgumentException("hooker should not be null!");
+        }
+    }
+
+    /** The module a builder's hooks belong to, or null when the framework owns them. */
+    private static String moduleIdOf(XposedInterface context) {
+        return context instanceof LSPosedContext lsposedContext ? lsposedContext.getPackageName() : null;
+    }
+
+    /** What the native side was handed for one registration, plus what a replacement inherits. */
+    static final class HookRecord {
+        final XposedInterface context;
+        final Executable executable;
+        final XposedInterface.Hooker hooker;
+        final int priority;
+        final XposedInterface.ExceptionMode exceptionMode;
+        final String id;
+
+        HookRecord(XposedInterface context, Executable executable, XposedInterface.Hooker hooker,
+                   int priority, XposedInterface.ExceptionMode exceptionMode, String id) {
+            this.context = context;
+            this.executable = executable;
+            this.hooker = hooker;
+            this.priority = priority;
+            this.exceptionMode = exceptionMode;
+            this.id = id;
+        }
+
+        /** The same registration with a different hooker, everything else carried over. */
+        HookRecord withHooker(XposedInterface.Hooker newHooker) {
+            return new HookRecord(context, executable,
+                    context == null ? newHooker : wrapHooker(context, exceptionMode, newHooker),
+                    priority, exceptionMode, id);
+        }
+    }
+
     static class HookBuilderImpl implements XposedInterface.HookBuilder {
         private final XposedInterface context;
         private final Executable executable;
+        private final String moduleId;
         private final XposedInterface.ExceptionMode defaultExceptionMode;
         private int priority = XposedInterface.PRIORITY_DEFAULT;
         private XposedInterface.ExceptionMode exceptionMode = XposedInterface.ExceptionMode.DEFAULT;
+        private String id = null;
 
-        HookBuilderImpl(XposedInterface context, Executable executable,
+        HookBuilderImpl(XposedInterface context, Executable executable, String moduleId,
                         XposedInterface.ExceptionMode defaultExceptionMode) {
             this.context = context;
             this.executable = executable;
+            this.moduleId = moduleId;
             this.defaultExceptionMode = defaultExceptionMode;
         }
 
@@ -491,36 +586,136 @@ public class LSPosedBridge {
             return this;
         }
 
+        @Override
+        public XposedInterface.HookBuilder setId(@Nullable String id) {
+            this.id = id;
+            return this;
+        }
+
         @NonNull
         @Override
         public XposedInterface.HookHandle intercept(@NonNull XposedInterface.Hooker hooker) {
-            if (exceptionMode == XposedInterface.ExceptionMode.PROTECTIVE
-                    || exceptionMode == XposedInterface.ExceptionMode.DEFAULT
-                    && defaultExceptionMode == XposedInterface.ExceptionMode.PROTECTIVE) {
-                hooker = new ProtectiveHooker(context, hooker);
+            checkHookable(executable, hooker);
+            var mode = exceptionMode == XposedInterface.ExceptionMode.DEFAULT
+                    ? defaultExceptionMode : exceptionMode;
+            var record = new HookRecord(context, executable, wrapHooker(context, mode, hooker),
+                    priority, mode, id);
+            // A framework hook, or a module hook that never asked to be replaceable by name: there is
+            // no id to look up and nothing another registration could supersede.
+            if (moduleId == null || id == null) {
+                return register(record, moduleId);
             }
-            return doHook(executable, priority, hooker);
+            synchronized (hookIdLock) {
+                var existing = hookIds.get(new HookIdKey(moduleId, executable, id));
+                // Same module, same executable, same id: the interface says this replaces the old
+                // hook atomically and invalidates its handle, rather than installing a second one.
+                // The replacement carries this builder's priority and exception mode, because it is
+                // a new hook - only the handle-based replaceHook inherits them.
+                if (existing != null && existing.isLive()) {
+                    return existing.swapLocked(record);
+                }
+                return register(record, moduleId);
+            }
+        }
+
+        /** Installs {@code record} natively and records the handle against its id. */
+        private XposedInterface.HookHandle register(HookRecord record, String moduleId) {
+            if (!HookBridge.hookMethod(HookBridge.API_MODE_101, record.executable,
+                    LSPosedBridge.NativeHooker.class, record.priority, record.hooker)) {
+                throw new io.github.libxposed.api.error.HookFailedError("Cannot hook " + record.executable);
+            }
+            var handle = new HookHandleImpl(moduleId, record);
+            if (moduleId != null) {
+                claimIdLocked(handle);
+            }
+            return handle;
         }
     }
 
     static class HookHandleImpl implements XposedInterface.HookHandle {
-        private final Executable executable;
-        private final XposedInterface.Hooker hooker;
+        private final String moduleId;
+        private HookRecord record;
+        private boolean live = true;
 
-        HookHandleImpl(Executable executable, XposedInterface.Hooker hooker) {
-            this.executable = executable;
-            this.hooker = hooker;
+        HookHandleImpl(String moduleId, HookRecord record) {
+            this.moduleId = moduleId;
+            this.record = record;
+        }
+
+        boolean isLive() {
+            return live;
         }
 
         @NonNull
         @Override
         public Executable getExecutable() {
-            return executable;
+            return record.executable;
+        }
+
+        @Nullable
+        @Override
+        public String getId() {
+            return record.id;
         }
 
         @Override
         public void unhook() {
-            HookBridge.unhookMethod(HookBridge.API_MODE_101, executable, hooker);
+            if (moduleId == null) {
+                synchronized (this) {
+                    if (!live) return;
+                    live = false;
+                }
+                HookBridge.unhookMethod(HookBridge.API_MODE_101, record.executable, record.hooker);
+                return;
+            }
+            synchronized (hookIdLock) {
+                // Idempotent, as the interface requires - and a handle that has already been
+                // superseded has to stay quiet here rather than tear down its own replacement.
+                if (!live) return;
+                live = false;
+                releaseIdLocked(this);
+                HookBridge.unhookMethod(HookBridge.API_MODE_101, record.executable, record.hooker);
+            }
+        }
+
+        @NonNull
+        @Override
+        public XposedInterface.HookHandle replaceHook(@NonNull XposedInterface.Hooker hooker) {
+            if (hooker == null) {
+                throw new IllegalArgumentException("hooker must not be null");
+            }
+            var moduleId = this.moduleId;
+            if (moduleId == null) {
+                throw new IllegalStateException("This hook does not belong to a module");
+            }
+            synchronized (hookIdLock) {
+                if (!live) {
+                    throw new IllegalStateException("This hook handle is no longer valid");
+                }
+                // Everything but the hooker is inherited, which is what distinguishes this from
+                // registering a new hook that happens to carry the same id.
+                return swapLocked(record.withHooker(hooker));
+            }
+        }
+
+        /**
+         * Puts {@code replacement} where this handle's record is and hands the registration to a
+         * fresh handle. Callers hold {@link #hookIdLock}, and {@code replacement} must carry this
+         * record's id.
+         */
+        HookHandleImpl swapLocked(HookRecord replacement) {
+            if (!HookBridge.replaceCallback(HookBridge.API_MODE_101, replacement.executable,
+                    record.hooker, replacement.hooker, replacement.priority)) {
+                // The record was not where we left it, and nothing was changed, so whatever hook is
+                // installed now stays installed.
+                throw new io.github.libxposed.api.error.HookFailedError(
+                        "Cannot replace the hook on " + replacement.executable);
+            }
+            live = false;
+            releaseIdLocked(this);
+            var handle = new HookHandleImpl(moduleId, replacement);
+            claimIdLocked(handle);
+            return handle;
         }
     }
 
@@ -645,23 +840,20 @@ public class LSPosedBridge {
         }
     }
 
+    /**
+     * Installs a hook that no module owns. {@link HookBuilder#intercept} reaches the same native
+     * registration through its own path, which additionally tracks the hook id; this stays for the
+     * framework-internal hooks, which have no module to scope an id to.
+     */
     public static XposedInterface.HookHandle doHook(
             Executable hookMethod,
             int priority,
             XposedInterface.Hooker hooker
     ) {
-        if (Modifier.isAbstract(hookMethod.getModifiers())) {
-            throw new IllegalArgumentException("Cannot hook abstract methods: " + hookMethod);
-        } else if (hookMethod.getDeclaringClass().getClassLoader() == LSPosedContext.class.getClassLoader()) {
-            throw new IllegalArgumentException("Do not allow hooking inner methods");
-        } else if (hookMethod.getDeclaringClass() == Method.class && hookMethod.getName().equals("invoke")) {
-            throw new IllegalArgumentException("Cannot hook Method.invoke");
-        } else if (hooker == null) {
-            throw new IllegalArgumentException("hooker should not be null!");
-        }
-
+        checkHookable(hookMethod, hooker);
         if (HookBridge.hookMethod(HookBridge.API_MODE_101, hookMethod, LSPosedBridge.NativeHooker.class, priority, hooker)) {
-            return new HookHandleImpl(hookMethod, hooker);
+            return new HookHandleImpl(null, new HookRecord(null, hookMethod, hooker, priority,
+                    XposedInterface.ExceptionMode.PASSTHROUGH, null));
         }
         throw new io.github.libxposed.api.error.HookFailedError("Cannot hook " + hookMethod);
     }
@@ -672,7 +864,7 @@ public class LSPosedBridge {
             XposedInterface.ExceptionMode defaultExceptionMode
     ) {
         Objects.requireNonNull(executable, "origin must not be null");
-        return new HookBuilderImpl(context, executable, defaultExceptionMode);
+        return new HookBuilderImpl(context, executable, moduleIdOf(context), defaultExceptionMode);
     }
 
     public static XposedInterface.HookBuilder newClassInitializerHookBuilder(
@@ -689,7 +881,7 @@ public class LSPosedBridge {
             if (classInitializer == null) {
                 throw new IllegalArgumentException("Cannot find class initializer for " + clazz);
             }
-            return new HookBuilderImpl(context, classInitializer, defaultExceptionMode);
+            return new HookBuilderImpl(context, classInitializer, moduleIdOf(context), defaultExceptionMode);
         }
     }
 

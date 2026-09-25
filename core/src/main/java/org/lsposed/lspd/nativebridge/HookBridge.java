@@ -24,6 +24,34 @@ public class HookBridge {
 
     public static native boolean unhookMethod(int apiMode, Executable hookMethod, Object callback);
 
+    /**
+     * Swaps {@code oldCallback} for {@code newCallback} on the hook already registered for
+     * {@code hookMethod}, under the same lock {@link #callbackSnapshot} takes, so no snapshot can
+     * observe both or neither.
+     *
+     * <p>A snapshot taken before this returns keeps running {@code oldCallback}: it copied the
+     * reference into an array of its own. That is what makes a replacement invisible to a call
+     * already in flight, which is what {@code HookHandle#replaceHook} promises.</p>
+     *
+     * <p>Returns false when {@code oldCallback} is no longer registered, which is the caller's cue
+     * that the handle it holds has already been replaced or unhooked.</p>
+     *
+     * @param newPriority the priority the replacement must occupy, which keeps the hook where it
+     *                    was in the chain instead of moving it behind its peers
+     */
+    public static native boolean replaceCallback(int apiMode, Executable hookMethod, Object oldCallback, Object newCallback, int newPriority);
+
+    /**
+     * The class name prefixes of the legacy {@code de.robv.android.xposed} API as this process will
+     * actually be asked for them, which is not the same as what they are called in source: dex
+     * obfuscation rewrites them, in the framework and in every module, to a different random string
+     * on every boot.
+     *
+     * <p>A module targeting API 102 is not allowed to reach any of them, and the module class loader
+     * is the only place that can be enforced.</p>
+     */
+    public static native String[] legacyApiPrefixes();
+
     public static native boolean deoptimizeMethod(Executable method);
 
     public static native <T> T allocateObject(Class<T> clazz) throws InstantiationException;

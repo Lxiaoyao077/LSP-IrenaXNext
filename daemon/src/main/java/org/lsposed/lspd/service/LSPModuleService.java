@@ -58,6 +58,12 @@ public class LSPModuleService extends IXposedService.Stub {
     // higher minApiVersion are rejected at load time (see ConfigFileManager#loadModule).
     static final int XPOSED_API_VERSION = XposedInterface.LIB_API;
 
+    // Lowest libxposed API version this framework still loads. A module built against an older API
+    // than this one is refused rather than loaded: 101 replaced the callback engine with the
+    // interceptor chain and moved the classloader to the module entry, so the framework serves 101
+    // onwards.
+    static final int MIN_SUPPORTED_API_VERSION = XposedInterface.API_101;
+
     private final static String TAG = "LSPosedModuleService";
 
     private final static Set<Integer> uidSet = ConcurrentHashMap.newKeySet();
@@ -246,7 +252,8 @@ public class LSPModuleService extends IXposedService.Stub {
     private static final int TRANSACTION_REMOVE_SCOPE = 13;
 
     private boolean speaksApi101() {
-        return loadedModule.file != null && loadedModule.file.targetApiVersion >= 101;
+        return loadedModule.file != null
+                && loadedModule.file.targetApiVersion >= MIN_SUPPORTED_API_VERSION;
     }
 
     @Override

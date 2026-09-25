@@ -40,6 +40,7 @@ import android.os.IBinder;
 import android.os.Process;
 import android.util.ArrayMap;
 
+import io.github.libxposed.api.XposedInterface;
 import org.lsposed.lspd.impl.LSPosedContext;
 import org.lsposed.lspd.models.PreLoadedApk;
 import org.lsposed.lspd.nativebridge.NativeAPI;
@@ -311,7 +312,10 @@ public final class XposedInit {
         var librarySearchPath = sb.toString();
 
         var initLoader = XposedInit.class.getClassLoader();
-        var mcl = LspModuleClassLoader.loadApk(apk, file.preLoadedDexes, librarySearchPath, initLoader);
+        // A legacy module speaks the de.robv API by definition, so the API 102 restriction - which
+        // only ever applies to a module that declares it targets 102 - is off for it.
+        var blockLegacyApi = file.targetApiVersion >= XposedInterface.API_102;
+        var mcl = LspModuleClassLoader.loadApk(apk, file.preLoadedDexes, librarySearchPath, initLoader, blockLegacyApi);
 
         try {
             if (mcl.loadClass(XposedBridge.class.getName()).getClassLoader() != initLoader) {

@@ -17,15 +17,18 @@ import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.List;
 
+import io.github.libxposed.api.annotations.XposedApiExact;
+import io.github.libxposed.api.annotations.XposedApiMin;
 import io.github.libxposed.api.utils.DexParser;
 
 /**
  * Xposed interface for modules to operate on application processes.
  *
- * <p>This is a superset of the libxposed API 100 and API 101 surfaces. Modules compiled
- * against either published version run against this interface: the members of both APIs
- * are present here, and the framework dispatches each call to the matching engine
- * automatically (overloads resolve to the API 100 or API 101 code path at the call site).
+ * <p>This is a superset of the libxposed API 100, API 101 and API 102 surfaces. Modules
+ * compiled against any published version run against this interface: the members of every
+ * API are present here, and the framework dispatches each call to the matching engine
+ * automatically (overloads resolve to the API 100, API 101 or API 102 code path at the call
+ * site).
  * </p>
  */
 @SuppressWarnings("unused")
@@ -38,27 +41,32 @@ public interface XposedInterface {
     /**
      * The SDK API version of the libxposed 100 surface.
      */
+    @XposedApiExact(100)
     int API = 100;
 
     /**
      * Indicates that the framework is running as root.
      */
+    @XposedApiExact(100)
     int FRAMEWORK_PRIVILEGE_ROOT = 0;
 
     /**
      * Indicates that the framework is running in a container with a fake system_server.
      */
+    @XposedApiExact(100)
     int FRAMEWORK_PRIVILEGE_CONTAINER = 1;
 
     /**
      * Indicates that the framework is running as a different app, which may have at most shell permission.
      */
+    @XposedApiExact(100)
     int FRAMEWORK_PRIVILEGE_APP = 2;
 
     /**
      * Indicates that the framework is embedded in the hooked app,
      * which means {@link #getRemotePreferences} will be null and remote file is unsupported.
      */
+    @XposedApiExact(100)
     int FRAMEWORK_PRIVILEGE_EMBEDDED = 3;
 
     // ------------------------------------------------------------------
@@ -68,13 +76,31 @@ public interface XposedInterface {
     /**
      * The API version of the libxposed 101 surface.
      */
+    @XposedApiMin(101)
     int API_101 = 101;
+
+    /**
+     * The API version of the libxposed 102 surface.
+     *
+     * <p>New features</p>
+     * <ul>
+     * <li>Hot reload allows modules to be updated without restarting the process.</li>
+     * <li>Module entries can stop receiving subsequent lifecycle callbacks.</li>
+     * <li>Hooks can be atomically replaced by api or same id.</li>
+     * </ul>
+     * <p>Behavior changes: Modules targeting 102 or higher</p>
+     * <ul>
+     * <li>Libxposed modules can not call legacy {@code de.robv.android.xposed} APIs.</li>
+     * </ul>
+     */
+    @XposedApiMin(102)
+    int API_102 = 102;
 
     /**
      * The API version of this <b>library</b>. Modules should use {@link #getApiVersion()}
      * to check the API version at runtime.
      */
-    int LIB_API = API_101;
+    int LIB_API = API_102;
 
     /**
      * The framework has the capability to hook system_server and other system processes.
@@ -117,6 +143,7 @@ public interface XposedInterface {
     /**
      * Contextual interface for before invocation callbacks.
      */
+    @XposedApiExact(100)
     interface BeforeHookCallback {
         /**
          * Gets the method / constructor to be hooked.
@@ -150,6 +177,7 @@ public interface XposedInterface {
     /**
      * Contextual interface for after invocation callbacks.
      */
+    @XposedApiExact(100)
     interface AfterHookCallback {
         /**
          * Gets the method / constructor to be hooked.
@@ -202,6 +230,7 @@ public interface XposedInterface {
      *
      * @param <T> {@link Method} or {@link Constructor}
      */
+    @XposedApiExact(100)
     interface MethodUnhooker<T> {
         /**
          * Gets the method or constructor being hooked.
@@ -346,11 +375,13 @@ public interface XposedInterface {
          * Intercepts a method / constructor call.
          *
          * @param chain The interceptor chain for the call
-         * @return The result to be returned from the interceptor
+         * @return The result to be returned from the interceptor. If the hooker does not want to
+         * change the result, it should call {@code chain.proceed()} and return its result.
          * @throws Throwable Throw any exception from the interceptor
          */
+        @XposedApiMin(101)
         default Object intercept(@NonNull Chain chain) throws Throwable {
-            throw new AbstractMethodError("Hooker does not implement intercept");
+            return chain.proceed();
         }
     }
 
@@ -368,6 +399,35 @@ public interface XposedInterface {
          * Cancels the hook. This method is idempotent.
          */
         void unhook();
+
+        /**
+         * Gets the unique id of the hook, or {@code null} if the hook is not assigned with an id.
+         */
+        @XposedApiMin(102)
+        @Nullable
+        String getId();
+
+        /**
+         * Atomically replaces this hook with a new hooker and returns the new hook handle.
+         *
+         * <p>The replacement keeps the executable, priority, exception handling mode, and id of this
+         * hook. For a hook with an id, this targets the same hook as creating a new hook on the same
+         * executable with the same id. This method is the handle-based form of replacement and can
+         * also replace a hook without an id. After a successful replacement, this handle is no longer
+         * valid.
+         * </p>
+         * <p>The hook chain is snapshot based. Replacing a hook while a call is running does not
+         * affect that in-flight call.</p>
+         *
+         * @param hooker The new hooker object
+         * @return The new handle for the replaced hook
+         * @throws IllegalArgumentException if hooker is invalid
+         * @throws IllegalStateException    if this hook handle is no longer valid
+         * @throws HookFailedError          if replacement fails due to framework internal error
+         */
+        @XposedApiMin(102)
+        @NonNull
+        HookHandle replaceHook(@NonNull Hooker hooker);
     }
 
     /**
@@ -409,6 +469,22 @@ public interface XposedInterface {
          */
         @NonNull
         HookHandle intercept(@NonNull Hooker hooker);
+
+        /**
+         * Sets a unique id for the hook, default to {@code null}. An id is used for exclusively
+         * identifying a hook in the same module on the executable. A new hook with the same id in
+         * the same module on the executable will replace the old one atomically, and the old hook
+         * handle will be invalid. Hook ids are isolated between modules.
+         *
+         * <p>The hook chain is snapshot based. Replacing or adding a hook while a call is running
+         * does not affect that in-flight call.</p>
+         *
+         * @param id The id for the hook. It can be {@code null} if you don't care about replacing
+         *           the hook later.
+         * @return The builder itself for chaining
+         */
+        @XposedApiMin(102)
+        HookBuilder setId(@Nullable String id);
     }
 
     // ------------------------------------------------------------------
@@ -448,6 +524,7 @@ public interface XposedInterface {
     /**
      * Gets the Xposed framework privilege of current implementation (API 100).
      */
+    @XposedApiExact(100)
     int getFrameworkPrivilege();
 
     // ------------------------------------------------------------------
