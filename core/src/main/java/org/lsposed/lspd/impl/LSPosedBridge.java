@@ -565,9 +565,23 @@ public class LSPosedBridge {
         }
     }
 
-    /** The module a builder's hooks belong to, or null when the framework owns them. */
+    /**
+     * The module a builder's hooks belong to, or null when nothing needs to be able to find them
+     * again: either the framework owns the hook, or it belongs to a module too old to know about
+     * hook ids and hot reload.
+     *
+     * <p>Recording a handle keeps a strong reference to the hooker and, through it, to the
+     * module's classes and class loader. Before API 102 nothing ever consumed those handles, so
+     * keeping them was pure growth - every hook the module installed stayed reachable until the
+     * process died. Only the modules that can ask for them back pay for keeping them.</p>
+     */
+    @Nullable
     private static String moduleIdOf(XposedInterface context) {
-        return context instanceof LSPosedContext lsposedContext ? lsposedContext.getPackageName() : null;
+        if (!(context instanceof LSPosedContext lsposedContext)) {
+            return null;
+        }
+        return lsposedContext.getTargetApiVersion() >= XposedInterface.API_102
+                ? lsposedContext.getPackageName() : null;
     }
 
     /** What the native side was handed for one registration, plus what a replacement inherits. */
@@ -641,7 +655,10 @@ public class LSPosedBridge {
             var record = new HookRecord(context, executable, wrapHooker(context, mode, hooker),
                     priority, mode, id);
             // A framework hook, or a module hook that never asked to be replaceable by name: there is
-            // no id to look up and nothing another registration could supersede.
+            // no id to look up and nothing another registration could supersede, so this needs no
+            // arbitration. It is by far the common case, and it stays out of hookIdLock on purpose:
+            // what register() does inside is a native call, and a global lock is not worth holding
+            // across it for a registration nothing can race with.
             if (moduleId == null || id == null) {
                 return register(record, moduleId);
             }
@@ -658,15 +675,26 @@ public class LSPosedBridge {
             }
         }
 
-        /** Installs {@code record} natively and records the handle against its id. */
+        /**
+         * Installs {@code record} natively and publishes the handle.
+         *
+         * <p>The install is deliberately <b>not</b> under {@link #hookIdLock} - callers of the fast
+         * path do not hold it either. Only the registry update needs the lock, and the handle is
+         * published after the install returns, so it can never be handed out before the hook it
+         * names exists.
+         * </p>
+         */
         private XposedInterface.HookHandle register(HookRecord record, String moduleId) {
             if (!HookBridge.hookMethod(HookBridge.API_MODE_101, record.executable,
                     LSPosedBridge.NativeHooker.class, record.priority, record.hooker)) {
                 throw new io.github.libxposed.api.error.HookFailedError("Cannot hook " + record.executable);
             }
             var handle = new HookHandleImpl(moduleId, record);
-            if (moduleId != null) {
+            synchronized (hookIdLock) {
+                // Both no-op without an id. Tracking is every handle a module owns, named or not,
+                // which is what a later hot reload hands to the new generation.
                 claimIdLocked(handle);
+                trackLocked(handle);
             }
             return handle;
         }
@@ -715,8 +743,11 @@ public class LSPosedBridge {
                 live = false;
                 releaseIdLocked(this);
                 untrackLocked(this);
-                HookBridge.unhookMethod(HookBridge.API_MODE_101, record.executable, record.hooker);
             }
+            // Outside the lock, for the same reason installs are: this is a native call. It removes
+            // this registration's callback and nothing else, so a same-id hook installed in the
+            // meantime is left alone.
+            HookBridge.unhookMethod(HookBridge.API_MODE_101, record.executable, record.hooker);
         }
 
         @NonNull

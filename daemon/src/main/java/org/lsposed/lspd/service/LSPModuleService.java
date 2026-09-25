@@ -404,35 +404,39 @@ public class LSPModuleService extends IXposedService.Stub {
         synchronized (targetLock) {
             var live = new HashSet<TargetKey>();
             for (var process : LSPApplicationService.runningProcesses()) {
-                if (!LSPApplicationService.runsModule(process, packageName)) {
+                var service = process.processService;
+                if (service == null) {
                     continue;
                 }
+                // Ask the process itself whether it runs this module, rather than working it out from
+                // the scope cache. That is one binder call, it answers what is actually loaded instead
+                // of what is configured, and it keeps this loop off the cache: the cache path reaches
+                // for the uncached system-server module list, which re-reads and preloads the dex of
+                // every system module on every call.
+                final String loadedApk;
+                final long loadedVersionCode;
+                try {
+                    loadedApk = service.getLoadedModuleApk(packageName);
+                    if (loadedApk == null) {
+                        continue;
+                    }
+                    loadedVersionCode = service.getLoadedModuleVersionCode(packageName);
+                } catch (RemoteException e) {
+                    // Died between being listed and being asked; it drops out of the registry on the
+                    // next pass anyway.
+                    continue;
+                }
+
                 var key = new TargetKey(process.uid, process.pid, process.processName);
                 live.add(key);
                 var targetId = targetIdsByKey.computeIfAbsent(key, k -> ++nextTargetId);
-
-                var service = process.processService;
-                String loadedApk = null;
-                long loadedVersionCode = -1;
-                if (service != null) {
-                    try {
-                        loadedApk = service.getLoadedModuleApk(packageName);
-                        if (loadedApk != null) {
-                            loadedVersionCode = service.getLoadedModuleVersionCode(packageName);
-                        }
-                    } catch (RemoteException e) {
-                        // died between being listed and being asked; it drops out of the registry
-                        // on the next pass anyway
-                        continue;
-                    }
-                }
 
                 int state;
                 if (reloadingTargets.contains(targetId)) {
                     state = HookedProcess.TARGET_STATE_RELOADING;
                 } else if (failedTargets.contains(targetId)) {
                     state = HookedProcess.TARGET_STATE_FAILED;
-                } else if (loadedApk != null && loadedApk.equals(installedApk)) {
+                } else if (loadedApk.equals(installedApk)) {
                     // The identity is the APK path, not the version code: an update always installs
                     // under a new path, so this stays right even for a rebuild that reuses the code.
                     state = HookedProcess.TARGET_STATE_UP_TO_DATE;

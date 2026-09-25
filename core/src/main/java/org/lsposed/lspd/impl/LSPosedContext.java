@@ -63,20 +63,36 @@ public class LSPosedContext implements XposedInterface {
     private final ApplicationInfo mApplicationInfo;
     private final ILSPInjectedModuleService service;
     private final ExceptionMode mDefaultExceptionMode;
+    /**
+     * The libxposed API level the module declared, or 0 when it declared none (API 100).
+     *
+     * <p>Below API 102 a module has no hook ids and no hot reload, so nothing is recorded for
+     * it. Keeping a handle costs a strong reference to the hooker and, through it, to the
+     * module's classes and class loader, and nothing before API 102 ever asked for those
+     * handles back: recording them was growth with no consumer.
+     * </p>
+     */
+    private final int mTargetApiVersion;
     private final Map<String, SharedPreferences> mRemotePrefs = new ConcurrentHashMap<>();
 
     LSPosedContext(String packageName, ApplicationInfo applicationInfo, ILSPInjectedModuleService service,
-                   ExceptionMode defaultExceptionMode) {
+                   ExceptionMode defaultExceptionMode, int targetApiVersion) {
         this.mPackageName = packageName;
         this.mApplicationInfo = applicationInfo;
         this.service = service;
         this.mDefaultExceptionMode = defaultExceptionMode;
+        this.mTargetApiVersion = targetApiVersion;
     }
 
     /**
      * The package name of the module this context belongs to. It is the module id hook ids are
      * scoped by, so that two modules cannot replace each other's hooks.
      */
+    /** The libxposed API level this module declared, or 0 when it declared none. */
+    int getTargetApiVersion() {
+        return mTargetApiVersion;
+    }
+
     String getPackageName() {
         return mPackageName;
     }
@@ -196,27 +212,33 @@ public class LSPosedContext implements XposedInterface {
     static LSPosedContext contextOf(@NonNull Module module) {
         var defaultExceptionMode = module.file.exceptionPassthrough
                 ? ExceptionMode.PASSTHROUGH : ExceptionMode.PROTECTIVE;
-        return new LSPosedContext(module.packageName, module.applicationInfo, module.service, defaultExceptionMode);
+        var targetApiVersion = module.file != null ? module.file.targetApiVersion : 0;
+        return new LSPosedContext(module.packageName, module.applicationInfo, module.service,
+                defaultExceptionMode, targetApiVersion);
     }
 
     /**
      * Builds the entry class instances of {@code module} over {@code mcl}, <b>without</b> calling any
      * lifecycle callback: the caller decides whether this generation gets {@code onModuleLoaded}
-     * (first load) or {@code onHotReloaded} (hot reload). A class that fails to build is skipped
-     * rather than failing the whole module.
+     * (first load) or {@code onHotReloaded} (hot reload).
+     *
+     * <p>A class that cannot be loaded, or that is not a module entry class, fails the module: an APK
+     * whose declared entry point is missing is not the module it claims to be. Only a failure while
+     * actually building an instance - which is per class - is skipped.
+     * </p>
      */
     @NonNull
     static List<XposedModule> instantiate(@NonNull ClassLoader mcl, @NonNull LSPosedContext context,
-                                          @NonNull Module module) {
+                                          @NonNull Module module) throws ClassNotFoundException {
         var instances = new ArrayList<XposedModule>();
         for (var entry : module.file.moduleClassNames) {
+            var moduleClass = mcl.loadClass(entry);
+            Log.d(TAG, "  Loading class " + moduleClass);
+            if (!XposedModule.class.isAssignableFrom(moduleClass)) {
+                Log.e(TAG, "    This class doesn't implement any sub-interface of XposedModule, skipping it");
+                continue;
+            }
             try {
-                var moduleClass = mcl.loadClass(entry);
-                Log.d(TAG, "  Loading class " + moduleClass);
-                if (!XposedModule.class.isAssignableFrom(moduleClass)) {
-                    Log.e(TAG, "    This class doesn't implement any sub-interface of XposedModule, skipping it");
-                    continue;
-                }
                 // API 100 modules take a (XposedInterface, ModuleLoadedParam) ctor, API 101 modules
                 // use no-arg + attachFramework. try API 100 first, fall back to API 101, decided per
                 // module so nobody has to configure anything.
@@ -231,7 +253,7 @@ public class LSPosedContext implements XposedInterface {
                 }
                 instances.add(instance);
             } catch (Throwable e) {
-                Log.e(TAG, "    Failed to load class " + entry, e);
+                Log.e(TAG, "    Failed to load class " + moduleClass, e);
             }
         }
         return instances;

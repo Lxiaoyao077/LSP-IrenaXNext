@@ -142,22 +142,6 @@ public class LSPApplicationService extends ILSPApplicationService.Stub {
         return processInfo == null ? null : processInfo.processService;
     }
 
-    /**
-     * Whether {@code process} is one the daemon loaded {@code packageName} into. Answered from the
-     * scope cache, which is what decided the process' module list in the first place.
-     */
-    static boolean runsModule(@NonNull ProcessInfo process, @NonNull String packageName) {
-        var modules = process.uid == Process.SYSTEM_UID && "system".equals(process.processName)
-                ? ConfigManager.getInstance().getModulesForSystemServer()
-                : ConfigManager.getInstance().getModulesForProcess(process.processName, process.uid);
-        for (var module : modules) {
-            if (packageName.equals(module.packageName)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private List<Module> getAllModulesList() throws RemoteException {
         var processInfo = ensureRegistered();
         if (processInfo.uid == Process.SYSTEM_UID && processInfo.processName.equals("system")) {
