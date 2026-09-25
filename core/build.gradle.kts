@@ -36,7 +36,9 @@ android {
     }
 
     defaultConfig {
-        buildConfigField("String", "FRAMEWORK_NAME", """"${rootProject.name}"""")
+        // The name modules read back through getFrameworkName(). Spelled out rather than taken
+        // from rootProject.name: a Gradle project name cannot contain a space, this can.
+        buildConfigField("String", "FRAMEWORK_NAME", """"Lsposed-Irena XNext"""")
         buildConfigField("String", "VERSION_NAME", """"$verName"""")
         buildConfigField("long", "VERSION_CODE", """$verCode""")
     }

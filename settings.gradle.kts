@@ -32,7 +32,9 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Lsposed-Irena XNext"
+// No spaces: Gradle rejects a project name that is not [a-zA-Z]([A-Za-z0-9\-_])*.
+// The name modules actually see comes from FRAMEWORK_NAME in core/build.gradle.kts.
+rootProject.name = "Lsposed-IrenaXNext"
 include(
     ":app",
     ":core",
