@@ -138,7 +138,7 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
         group = "Lsposed-Irena XNext"
         dependsOn(
             "assemble$variantCapped",
-            ":app:package$buildTypeCapped",
+            ":manager:package$buildTypeCapped",
             ":daemon:package$buildTypeCapped",
             ":dex2oat:externalNativeBuild${buildTypeCapped}"
         )
@@ -167,7 +167,7 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
             filter<ReplaceTokens>("tokens" to tokens)
             filter<FixCrLfFilter>("eol" to FixCrLfFilter.CrLf.newInstance("lf"))
         }
-        from(project(":app").tasks.getByName("package$buildTypeCapped").outputs) {
+        from(project(":manager").tasks.getByName("package$buildTypeCapped").outputs) {
             include("*.apk")
             rename(".*\\.apk", "manager.apk")
         }
@@ -295,14 +295,14 @@ val reRunDaemon = tasks.register<Exec>("reRunDaemon") {
 val tmpApk = "/data/local/tmp/manager.apk"
 val pushApk = tasks.register<Exec>("pushApk") {
     group = "Lsposed-Irena XNext"
-    dependsOn(":app:assembleDebug")
+    dependsOn(":manager:assembleDebug")
     doFirst {
         serviceOf<ExecOperations>().exec {
             commandLine(adb, "shell", "su", "-c", "rm", "-f", tmpApk)
         }
     }
-    workingDir(project(":app").layout.buildDirectory.dir("outputs/apk/debug"))
-    commandLine(adb, "push", "app-debug.apk", tmpApk)
+    workingDir(project(":manager").layout.buildDirectory.dir("outputs/apk/debug"))
+    commandLine(adb, "push", "manager-debug.apk", tmpApk)
 }
 tasks.register<Exec>("openApp") {
     group = "Lsposed-Irena XNext"
@@ -332,5 +332,5 @@ tasks.register("reRunApp", fun Task.() {
     finalizedBy(reRunDaemon)
 })
 
-evaluationDependsOn(":app")
+evaluationDependsOn(":manager")
 evaluationDependsOn(":daemon")

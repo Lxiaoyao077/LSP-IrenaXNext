@@ -91,8 +91,8 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
 
     val signInfoTask = tasks.register<GenerateSignInfoTask>("generate${variantCapped}SignInfo") {
         outputDir.set(layout.buildDirectory.dir("generated/source/signInfo/${variant.name.lowercase()}"))
-        dependsOn(":app:validateSigning${buildTypeCapped}")
-        val sign = rootProject.project(":app").extensions
+        dependsOn(":manager:validateSigning${buildTypeCapped}")
+        val sign = rootProject.project(":manager").extensions
             .getByType(ApplicationExtension::class.java)
             .buildTypes.named(buildTypeLowered).get().signingConfig
         doLast {

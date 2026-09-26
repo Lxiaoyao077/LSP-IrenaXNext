@@ -37,6 +37,7 @@ dependencyResolutionManagement {
 rootProject.name = "Lsposed-IrenaXNext"
 include(
     ":app",
+    ":manager",
     ":core",
     ":daemon",
     ":dex2oat",
@@ -44,7 +45,6 @@ include(
     ":hiddenapi:bridge",
     ":magisk-loader",
     ":manager-ui",
-    ":manager",
     ":libxposed:api",
     ":libxposed:service",
     ":libxposed:compat",
