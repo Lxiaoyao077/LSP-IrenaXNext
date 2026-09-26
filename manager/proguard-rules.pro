@@ -9,6 +9,11 @@
 -keep class org.javsaia.vector.manager.Constants {
     public static boolean setBinder(android.os.IBinder);
 }
+# irena's daemon loads this one by name -- it is where the manager package's Constants has to
+# live -- so losing the rule loses the binder handshake, silently, at runtime.
+-keep class org.lsposed.manager.Constants {
+    public static boolean setBinder(android.os.IBinder);
+}
 
 # ParasiticManagerHooker redirects the resolved activity to this class by name.
 -keep class org.matrix.vector.manager.ui.MainActivity { <init>(); }
