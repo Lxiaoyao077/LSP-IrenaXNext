@@ -12,7 +12,7 @@ m3 = "1.5.0-alpha26"
 lifecycle = "2.11.0"
 nav3 = "1.1.6"
 coroutines = "1.11.0"
-coil = "3.5.0"
+coil = "3.6.3"
 navigationevent = "1.1.2"
 [plugins]
 agp-lib = { id = "com.android.library", version.ref = "agp" }
