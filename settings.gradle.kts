@@ -43,6 +43,7 @@ include(
     ":hiddenapi:stubs",
     ":hiddenapi:bridge",
     ":magisk-loader",
+    ":manager-ui",
     ":libxposed:api",
     ":libxposed:service",
     ":libxposed:compat",

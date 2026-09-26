@@ -1,0 +1,52 @@
+name: Manager UI
+
+# Compiles :manager-ui by itself. While nothing depends on the module yet, `zipAll`
+# would never reach it, and a port that only gets compiled later is a port nobody knows
+# is broken. Fold this into Core once :app depends on the module.
+on:
+  push:
+    branches: [ dev ]
+    paths:
+      - 'manager-ui/**'
+      - 'gradle/libs.versions.toml'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - '.github/workflows/manager-ui.yml'
+  workflow_dispatch:
+
+jobs:
+  compile:
+    name: Compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          log-accepted-android-sdk-licenses: 'false'
+          packages: ''
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@master
+        with:
+          version: 1.12.1
+
+      - name: Remove Android's cmake
+        shell: bash
+        run: rm -rf $ANDROID_HOME/cmake
+
+      - name: Compile manager-ui
+        run: ./gradlew :manager-ui:assembleDebug

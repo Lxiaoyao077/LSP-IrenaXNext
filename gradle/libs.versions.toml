@@ -1,6 +1,6 @@
 [versions]
 agp = "9.4.1"
-kotlin = "2.2.20"
+kotlin = "2.4.10"
 nav = "2.9.8"
 glide = "5.0.9"
 okhttp = "5.3.2"
@@ -8,7 +8,6 @@ startupRuntime = "1.2.0"
 ndk = "29.0.13599879-beta2"
 
 compose-bom = "2026.08.00"
-m3 = "1.5.0-alpha26"
 m3 = "1.5.0-alpha26"
 lifecycle = "2.11.0"
 nav3 = "1.1.6"

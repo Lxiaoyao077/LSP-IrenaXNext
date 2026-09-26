@@ -26,6 +26,12 @@ plugins {
     alias(libs.plugins.lsplugin.jgit)
     alias(libs.plugins.agp.lib) apply false
     alias(libs.plugins.agp.app) apply false
+    // Pins the Kotlin version on the buildscript classpath. AGP 9 compiles Kotlin itself
+    // and applying org.jetbrains.kotlin.android is an error since AGP 9.0, but the compiler
+    // version it uses is taken from whatever KGP is on that classpath -- which the Compose
+    // stack in :manager-ui needs to be 2.4.10, since its artifacts ship class metadata an
+    // older compiler refuses to read.
+    alias(libs.plugins.kotlin) apply false
     alias(libs.plugins.nav.safeargs) apply false
 }
 
