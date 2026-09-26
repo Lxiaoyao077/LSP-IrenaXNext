@@ -64,6 +64,45 @@ link_libraries(xz_embedded)
 
 OPTION(LSPLANT_BUILD_SHARED OFF)
 add_subdirectory(lsplant/lsplant/src/main/jni)
+if (ANDROID_ABI STREQUAL "arm64-v8a" OR ANDROID_ABI STREQUAL "armeabi-v7a")
+    # ShadowHook ships for the arm ABIs only, so on anything else the backend stays on
+    # Dobby alone. Built from source rather than consumed from its Prefab package so it
+    # can be linked statically into core.
+    enable_language(ASM)
+    set(SHADOWHOOK_SRC ${CMAKE_CURRENT_SOURCE_DIR}/shadowhook/shadowhook/src/main/cpp)
+    if (ANDROID_ABI STREQUAL "arm64-v8a")
+        set(SHADOWHOOK_ARCH "arm64")
+    else ()
+        set(SHADOWHOOK_ARCH "arm")
+    endif ()
+    file(GLOB SHADOWHOOK_SOURCES
+            ${SHADOWHOOK_SRC}/*.c
+            ${SHADOWHOOK_SRC}/arch/${SHADOWHOOK_ARCH}/*.c
+            ${SHADOWHOOK_SRC}/arch/${SHADOWHOOK_ARCH}/*.S
+            ${SHADOWHOOK_SRC}/common/*.c
+            ${SHADOWHOOK_SRC}/third_party/*/*.c
+    )
+    list(REMOVE_ITEM SHADOWHOOK_SOURCES ${SHADOWHOOK_SRC}/sh_linker.c)
+    list(APPEND SHADOWHOOK_SOURCES
+            ${CMAKE_CURRENT_SOURCE_DIR}/patches/shadowhook/sh_linker.c)
+    add_library(shadowhook STATIC ${SHADOWHOOK_SOURCES})
+    target_include_directories(shadowhook PUBLIC
+            ${SHADOWHOOK_SRC}
+            ${SHADOWHOOK_SRC}/include
+            ${SHADOWHOOK_SRC}/arch/${SHADOWHOOK_ARCH}
+            ${SHADOWHOOK_SRC}/common
+            ${SHADOWHOOK_SRC}/third_party/xdl
+            ${SHADOWHOOK_SRC}/third_party/bsd
+            ${SHADOWHOOK_SRC}/third_party/lss
+    )
+    target_compile_options(shadowhook PRIVATE
+            -Wno-unused-parameter
+            -Wno-unused-but-set-variable
+            -Wno-unused-variable
+            -Wno-unused-function
+    )
+endif ()
+
 add_subdirectory(dobby)
 add_subdirectory(fmt)
 target_compile_definitions(fmt-header-only INTERFACE FMT_STATIC_THOUSANDS_SEPARATOR=1 FMT_USE_FLOAT=0 FMT_USE_DOUBLE=0 FMT_USE_LONG_DOUBLE=0)

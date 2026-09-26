@@ -7,6 +7,9 @@
 [submodule "external/dobby"]
 	path = external/dobby
 	url = https://github.com/re-zero001/Dobby.git
+[submodule "external/shadowhook"]
+	path = external/shadowhook
+	url = https://github.com/bytedance/android-inline-hook.git
 [submodule "external/fmt"]
 	path = external/fmt
 	url = https://github.com/fmtlib/fmt.git
