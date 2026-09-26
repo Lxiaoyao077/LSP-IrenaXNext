@@ -66,8 +66,11 @@ val verCode by extra(commitCount)
 val verName by extra(latestTag)
 val androidTargetSdkVersion by extra(36)
 val androidMinSdkVersion by extra(29)
-val androidBuildToolsVersion by extra("36.0.0")
-val androidCompileSdkVersion by extra(36)
+// 37 because glide 5.0.9 declares it needs it; its AAR metadata check fails the build on 36.
+// compileSdkMinor defaults to 0, which resolves to platforms;android-37.0 - there is no bare
+// android-37 package.
+val androidBuildToolsVersion by extra("37.0.0")
+val androidCompileSdkVersion by extra(37)
 val androidCompileNdkVersion by extra(libs.versions.ndk.get())
 val androidSourceCompatibility by extra(JavaVersion.VERSION_21)
 val androidTargetCompatibility by extra(JavaVersion.VERSION_21)
