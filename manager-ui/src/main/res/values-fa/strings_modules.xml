@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="modules_collapse">نمایش کمتر</string>
+    <string name="modules_expand">نمایش توضیح کامل</string>
+
+    <!-- Vector-it additions -->
+    <string name="modules_scope_more">+%1$d</string>
+</resources>

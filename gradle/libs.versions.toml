@@ -1,12 +1,17 @@
 [versions]
 agp = "9.4.1"
-kotlin = "2.4.20"
-nav = "2.10.2"
+kotlin = "2.2.20"
+nav = "2.9.8"
 glide = "5.0.9"
-okhttp = "5.5.0"
+okhttp = "5.3.2"
 startupRuntime = "1.2.0"
 ndk = "29.0.13599879-beta2"
 
+compose-bom = "2026.08.00"
+m3 = "1.5.0-alpha26"
+m3 = "1.5.0-alpha26"
+lifecycle = "2.11.0"
+nav3 = "1.1.6"
 [plugins]
 agp-lib = { id = "com.android.library", version.ref = "agp" }
 agp-app = { id = "com.android.application", version.ref = "agp" }
@@ -19,6 +24,7 @@ lsplugin-apksign = { id = "org.lsposed.lsplugin.apksign", version = "1.4" }
 lsplugin-cmaker = { id = "org.lsposed.lsplugin.cmaker", version = "1.4" }
 lsplugin-jgit = { id = "org.lsposed.lsplugin.jgit", version = "1.1" }
 
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 [libraries]
 androidx-startup-runtime = { module = "androidx.startup:startup-runtime", version.ref = "startupRuntime" }
 
@@ -60,3 +66,14 @@ gson = { module = "com.google.code.gson:gson", version = "2.14.0" }
 hiddenapibypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version = "6.1" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = "1.11.0" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version = "1.13.0" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "m3" }
+androidx-compose-material3-adaptive-navigation-suite = { group = "androidx.compose.material3", name = "material3-adaptive-navigation-suite", version.ref = "m3" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.19.0" }
+androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+androidx-navigation3-runtime = { group = "androidx.navigation3", name = "navigation3-runtime", version.ref = "nav3" }
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version = "1.17.0" }
