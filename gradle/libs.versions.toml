@@ -8,7 +8,7 @@ startupRuntime = "1.2.0"
 ndk = "29.0.13599879-beta2"
 
 compose-bom = "2026.08.00"
-m3 = "1.5.0-alpha26"
+m3 = "1.5.0-alpha29"
 lifecycle = "2.11.0"
 nav3 = "1.1.6"
 coroutines = "1.11.0"
