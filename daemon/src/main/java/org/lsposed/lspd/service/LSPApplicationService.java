@@ -44,6 +44,9 @@ import java.util.stream.Collectors;
 public class LSPApplicationService extends ILSPApplicationService.Stub {
     final static int DEX_TRANSACTION_CODE = 1310096052;
     final static int OBFUSCATION_MAP_TRANSACTION_CODE = 724533732;
+    // '_' << 24 | 'I' << 16 | 'H' << 8 | 'B'. Must stay in step with
+    // Service::INLINE_HOOK_TRANSACTION_CODE on the native side.
+    final static int INLINE_HOOK_TRANSACTION_CODE = ('_' << 24) | ('I' << 16) | ('H' << 8) | 'B';
     // key: <uid, pid>
     private final static Map<Pair<Integer, Integer>, ProcessInfo> processes = new ConcurrentHashMap<>();
 
@@ -109,6 +112,10 @@ public class LSPApplicationService extends ILSPApplicationService.Stub {
                     // return val = key if obfuscation disabled
                     reply.writeString(obfuscation ? entry.getValue() : entry.getKey());
                 }
+                return true;
+            }
+            case INLINE_HOOK_TRANSACTION_CODE: {
+                reply.writeInt(ConfigManager.getInstance().inlineHookBackend());
                 return true;
             }
         }

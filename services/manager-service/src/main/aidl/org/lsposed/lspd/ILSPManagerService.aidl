@@ -12,6 +12,12 @@ interface ILSPManagerService {
     const int DEX2OAT_SELINUX_PERMISSIVE = 3;
     const int DEX2OAT_SEPOLICY_INCORRECT = 4;
 
+    /** The Dobby engine. Available on every ABI. */
+    const int INLINE_HOOK_BACKEND_DOBBY = 0;
+
+    /** The ShadowHook engine. Built for arm64-v8a and armeabi-v7a only. */
+    const int INLINE_HOOK_BACKEND_SHADOWHOOK = 1;
+
     String getApi() = 1;
 
     ParcelableListSlice<PackageInfo> getInstalledPackagesFromAllUsers(int flags, boolean filterNoProcess) = 2;
@@ -101,4 +107,11 @@ interface ILSPManagerService {
     boolean deleteModulePrefs(String packageName, int userId) = 54;
 
     void removeBlockedScopeRequest(String packageName, int userId) = 55;
+
+    int getInlineHookBackend() = 56;
+
+    /**
+     * Processes already running keep the engine they started with.
+     */
+    void setInlineHookBackend(int backend) = 57;
 }

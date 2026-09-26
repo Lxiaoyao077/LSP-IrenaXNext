@@ -51,6 +51,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.apache.commons.lang3.SerializationUtils;
+import org.lsposed.lspd.ILSPManagerService;
 import org.lsposed.daemon.BuildConfig;
 import org.lsposed.lspd.models.Application;
 import org.lsposed.lspd.models.Module;
@@ -1145,6 +1146,19 @@ public class ConfigManager {
         set.remove(userStateKey(packageName, userId));
         updateModulePrefs("lspd", 0, "config", "scope_request_blocked", set);
         scopeRequestBlocked = set;
+    }
+
+    public void setInlineHookBackend(int backend) {
+        updateModulePrefs("lspd", 0, "config", "inline_hook_backend", backend);
+    }
+
+    // Read straight from the prefs rather than a cache: an injected process asks once,
+    // at startup, and the value has to reflect the last write from the manager.
+    int inlineHookBackend() {
+        var value = getModulePrefs("lspd", 0, "config").get("inline_hook_backend");
+        return value instanceof Integer
+                ? (Integer) value
+                : ILSPManagerService.INLINE_HOOK_BACKEND_SHADOWHOOK;
     }
 
     // this is for manager and should not use the cache result

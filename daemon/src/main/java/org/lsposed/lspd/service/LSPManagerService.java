@@ -576,6 +576,16 @@ public class LSPManagerService extends ILSPManagerService.Stub {
     }
 
     @Override
+    public int getInlineHookBackend() {
+        return ConfigManager.getInstance().inlineHookBackend();
+    }
+
+    @Override
+    public void setInlineHookBackend(int backend) {
+        ConfigManager.getInstance().setInlineHookBackend(backend);
+    }
+
+    @Override
     public int getDex2OatWrapperCompatibility() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             return ServiceManager.getDex2OatService().getCompatibility();
