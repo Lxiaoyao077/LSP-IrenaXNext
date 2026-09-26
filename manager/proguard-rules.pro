@@ -9,14 +9,12 @@
 -keep class org.javsaia.vector.manager.Constants {
     public static boolean setBinder(android.os.IBinder);
 }
-# irena's daemon looks this one up by name: it is where the manager package's Constants lives.
--keep class org.lsposed.manager.Constants {
-    public static boolean setBinder(android.os.IBinder);
-}
 
 # ParasiticManagerHooker redirects the resolved activity to this class by name.
 -keep class org.matrix.vector.manager.ui.MainActivity { <init>(); }
 -keep class org.javsaia.vector.manager.ui.MainActivity { <init>(); }
+# irena's hooker rewrites the launch intent to this name and looks the activity up by it.
+-keep class org.lsposed.manager.ui.activity.MainActivity { <init>(); }
 
 # AIDL stubs and the parcelables crossing the daemon boundary.
 -keep class org.matrix.vector.ipc.** { *; }
