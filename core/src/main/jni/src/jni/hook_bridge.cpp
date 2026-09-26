@@ -41,6 +41,21 @@ struct HookItem {
     std::multimap<jint, jobject, std::greater<>> legacy_callbacks;
     std::multimap<jint, jobject, std::greater<>> modern_callbacks;
     std::multimap<jint, jobject, std::greater<>> api101_callbacks;
+
+    // What callbackSnapshot() hands to Java, held until a callback set changes. Rebuilding it
+    // costs four array allocations plus one element write per callback, and that ran on every
+    // invocation of every hooked method; caching it is what takes that off the hot path. A global
+    // ref owned here, dropped by InvalidateSnapshot, which every mutation calls while it holds
+    // the same lock this is read under.
+    jobjectArray snapshot {nullptr};
+
+    void InvalidateSnapshot(JNIEnv *env) {
+        if (snapshot) {
+            env->DeleteGlobalRef(snapshot);
+            snapshot = nullptr;
+        }
+    }
+
 private:
     std::atomic<jobject> backup {nullptr};
     static_assert(decltype(backup)::is_always_lock_free);
@@ -682,6 +697,7 @@ LSP_DEF_NATIVE_METHOD(jboolean, HookBridge, hookMethod, jint apiMode, jobject ho
     jobject backup = hook_item->GetBackup();
     if (!backup) return JNI_FALSE;
     JNIMonitor monitor(env, backup);
+    hook_item->InvalidateSnapshot(env);
     if (apiMode == API_MODE_LEGACY) {
         // classic Xposed API (de.robv.android.xposed)
         hook_item->legacy_callbacks.emplace(priority, env->NewGlobalRef(callback));
@@ -707,6 +723,7 @@ LSP_DEF_NATIVE_METHOD(jboolean, HookBridge, unhookMethod, jint apiMode, jobject 
     jobject backup = hook_item->GetBackup();
     if (!backup) return JNI_FALSE;
     JNIMonitor monitor(env, backup);
+    hook_item->InvalidateSnapshot(env);
     if (apiMode == API_MODE_LEGACY) {
         for (auto i = hook_item->legacy_callbacks.begin(); i != hook_item->legacy_callbacks.end(); ++i) {
             if (env->IsSameObject(i->second, callback)) {
@@ -805,6 +822,10 @@ LSP_DEF_NATIVE_METHOD(jobjectArray, HookBridge, callbackSnapshot, jclass callbac
     if (!backup) return nullptr;
     JNIMonitor monitor(env, backup);
 
+    // Same three arrays as last time unless a callback set changed, which is the common case by
+    // an enormous margin: a hooked method is called far more often than hooks are added.
+    if (hook_item->snapshot) return hook_item->snapshot;
+
     auto res = env->NewObjectArray(3, env->FindClass("[Ljava/lang/Object;"), nullptr);
     auto modern = env->NewObjectArray((jsize) hook_item->modern_callbacks.size(), env->FindClass("java/lang/Object"), nullptr);
     auto legacy = env->NewObjectArray((jsize) hook_item->legacy_callbacks.size(), env->FindClass("java/lang/Object"), nullptr);
@@ -821,7 +842,8 @@ LSP_DEF_NATIVE_METHOD(jobjectArray, HookBridge, callbackSnapshot, jclass callbac
     env->SetObjectArrayElement(res, 0, modern);
     env->SetObjectArrayElement(res, 1, legacy);
     env->SetObjectArrayElement(res, 2, api101);
-    return res;
+    hook_item->snapshot = static_cast<jobjectArray>(env->NewGlobalRef(res));
+    return hook_item->snapshot;
 }
 
 LSP_DEF_NATIVE_METHOD(jobjectArray, HookBridge, callbackSnapshot101, jobject method, jint maxPriority) {
@@ -862,6 +884,7 @@ LSP_DEF_NATIVE_METHOD(jboolean, HookBridge, replaceCallback, jint apiMode, jobje
     auto callbacks = CallbacksFor(hook_item, apiMode);
     if (!callbacks) return JNI_FALSE;
     JNIMonitor monitor(env, backup);
+    hook_item->InvalidateSnapshot(env);
     for (auto i = callbacks->begin(); i != callbacks->end(); ++i) {
         if (env->IsSameObject(i->second, oldCallback)) {
             auto replacement = env->NewGlobalRef(newCallback);

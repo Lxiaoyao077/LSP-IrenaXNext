@@ -74,32 +74,23 @@ public class LSPosedBridge {
     }
 
     public static class NativeHooker<T extends Executable> {
-        private final Object params;
+        // Unpacked once, at construction. They used to live in an Object[] and be cast and
+        // unboxed on every callback, which is the one place in this class that runs per call.
+        private final T method;
+        @Nullable
+        private final Class<?> returnType;
+        private final boolean isStatic;
 
+        @SuppressWarnings("unchecked")
         private NativeHooker(Executable method) {
-            var isStatic = Modifier.isStatic(method.getModifiers());
-            Object returnType;
-            if (method instanceof Method) {
-                returnType = ((Method) method).getReturnType();
-            } else {
-                returnType = null;
-            }
-            params = new Object[]{
-                    method,
-                    returnType,
-                    isStatic,
-            };
+            this.method = (T) method;
+            this.isStatic = Modifier.isStatic(method.getModifiers());
+            this.returnType = method instanceof Method ? ((Method) method).getReturnType() : null;
         }
 
         // This method is quite critical. We should try not to use system methods to avoid
         // endless recursive
         public Object callback(Object[] args) throws Throwable {
-            var array = ((Object[]) params);
-
-            var method = (T) array[0];
-            var returnType = (Class<?>) array[1];
-            var isStatic = (Boolean) array[2];
-
             Object thisObject;
             Object[] methodArgs;
             if (isStatic) {
@@ -108,13 +99,15 @@ public class LSPosedBridge {
             } else {
                 thisObject = args[0];
                 methodArgs = new Object[args.length - 1];
-                //noinspection ManualArrayCopy
-                for (int i = 0; i < args.length - 1; ++i) {
-                    methodArgs[i] = args[i + 1];
-                }
+                System.arraycopy(args, 1, methodArgs, 0, args.length - 1);
             }
 
             Object[][] callbacksSnapshot = HookBridge.callbackSnapshot(HookerCallback.class, method);
+            if (callbacksSnapshot == null) {
+                // Every hook was removed between the trampoline being entered and this point, so
+                // there is nothing left to dispatch to and the original method runs unchanged.
+                return HookBridge.invokeOriginalMethod(method, thisObject, methodArgs);
+            }
             Object[] modernSnapshot = callbacksSnapshot[0];
             Object[] legacySnapshot = callbacksSnapshot[1];
             Object[] api101Snapshot = callbacksSnapshot[2];
