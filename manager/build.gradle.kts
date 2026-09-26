@@ -54,6 +54,12 @@ android {
 
     defaultConfig {
         applicationId = defaultManagerPackageName
+
+        // arm only, like the rest of the module. This framework does not build for x86 or
+        // x86_64 any more, and Compose pulls in androidx.graphics.path's native library for
+        // every ABI it is published for -- so without this the manager APK ships four copies
+        // of a .so that only one of which any supported device can load.
+        ndk.abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         buildConfigField("String", "VERSION_HASH", "\"$versionHash\"")
         buildConfigField("String", "MANAGER_PACKAGE_NAME", "\"$defaultManagerPackageName\"")
         buildConfigField("String", "INJECTED_PACKAGE_NAME", "\"$injectedPackageName\"")

@@ -1,4 +1,26 @@
-# Vector Manager
+# Irena-XNext manager
+
+Ported from [VectorXposed-it](https://github.com/MagicModule/VectorXposed-it)'s manager (GPL-3.0).
+The design notes below are that project's, and they still describe this code, which is theirs with
+the transport adapted. Three things differ here, and they are the ones worth knowing first:
+
+- **The daemon is irena's.** The screens, view models and repositories are written against the
+  `IManagerService` this module carries as vendored AIDL;
+  `org.matrix.vector.ipc.IrenaManagerService` implements it over
+  `org.lsposed.lspd.ILSPManagerService`. That one class is the whole of the adaptation — the
+  mapping, and the handful of places irena cannot answer what upstream asks, are documented
+  method by method there.
+- **Two class names are irena's, not upstream's**, because this framework reaches them by
+  literal: `org.lsposed.manager.Constants`, which the daemon's `ParasiticManagerHooker` loads by
+  reflection for the `setBinder(IBinder)` handshake, and
+  `org.lsposed.manager.ui.activity.MainActivity`, which that same hooker rewrites every launch
+  intent to and looks up by name. Both forward to the ported classes, and both are kept by
+  `proguard-rules.pro`. Renaming either breaks the manager silently.
+- **Upstream's `:app` has not been deleted here yet.** It is still in the tree but nothing
+  packages or depends on it; it goes once this manager has been confirmed on a device.
+
+Everything from here down is upstream's own text, unchanged.
+
 
 The manager app: Jetpack Compose, one activity, configuring the root daemon over Binder. It holds
 no privilege of its own — everything it does to the device, it asks the daemon to do. It replaces
