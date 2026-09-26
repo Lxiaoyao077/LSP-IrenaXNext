@@ -76,7 +76,7 @@ namespace lspd {
             return InstallNativeAPI(lsplant::InitInfo{
                 .inline_hooker = [](auto t, auto r) {
                     void* bk = nullptr;
-                    return HookFunction(t, r, &bk) == RS_SUCCESS ? bk : nullptr;
+                    return FrameworkHookFunction(t, r, &bk) == RS_SUCCESS ? bk : nullptr;
                 },
                 .art_symbol_resolver = [](auto symbol) {
                     return SandHook::ElfImg("/linker").getSymbAddress(symbol);},.art_symbol_prefix_resolver = [](auto symbol) {

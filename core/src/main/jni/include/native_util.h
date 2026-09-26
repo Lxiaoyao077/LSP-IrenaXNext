@@ -123,7 +123,9 @@ inline bool shadowhookInit() {
         // hand that address to Dobby - leaving both engines owning one function and the
         // process running a torn mixture of the two. Apps that hook natively themselves
         // tripped this reliably. SHARED accepts repeated hooks and chains them.
-        g_shadowhook_init_result = shadowhook_init(SHADOWHOOK_MODE_SHARED, false);
+        // debuggable=true asks shadowhook for its extra safety checks, so an init that
+        // would otherwise have taken the process down reports an errno instead.
+        g_shadowhook_init_result = shadowhook_init(SHADOWHOOK_MODE_SHARED, true);
         if (g_shadowhook_init_result != 0) {
             LOGE("ShadowHook init failed: {}",
                  shadowhook_to_errmsg(shadowhook_get_init_errno()));
@@ -132,6 +134,21 @@ inline bool shadowhookInit() {
     return g_shadowhook_init_result == 0;
 }
 #endif
+
+// The framework's own hooks always go through Dobby, whatever the setting says.
+//
+// LSPlant installs these from Init(), on ART internals, and the whole framework hangs off
+// them. Keeping them on one engine means the setting only affects module hooks, and it
+// removes the case where ShadowHook and Dobby both patch code in the same process - which
+// is what crashed apps that hook natively themselves.
+inline int FrameworkHookFunction(void *original, void *replace, void **backup) {
+    return DobbyHook(original, reinterpret_cast<dobby_dummy_func_t>(replace),
+                     reinterpret_cast<dobby_dummy_func_t *>(backup));
+}
+
+inline int FrameworkUnhookFunction(void *original) {
+    return DobbyDestroy(original);
+}
 
 inline int HookFunction(void *original, void *replace, void **backup) {
     if constexpr (isDebug) {

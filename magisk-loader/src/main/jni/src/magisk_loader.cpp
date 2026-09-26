@@ -122,7 +122,7 @@ namespace lspd {
             lsplant::InitInfo initInfo{
                 .inline_hooker = [](auto t, auto r) {
                     void* bk = nullptr;
-                    return HookFunction(t, r, &bk) == RS_SUCCESS ? bk : nullptr;
+                    return FrameworkHookFunction(t, r, &bk) == RS_SUCCESS ? bk : nullptr;
                 },
                 .inline_unhooker = [](auto t) {
                     return UnhookFunction(t) == RT_SUCCESS ;
@@ -201,10 +201,10 @@ namespace lspd {
             lsplant::InitInfo initInfo{
                     .inline_hooker = [](auto t, auto r) {
                         void* bk = nullptr;
-                        return HookFunction(t, r, &bk) == RS_SUCCESS ? bk : nullptr;
+                        return FrameworkHookFunction(t, r, &bk) == RS_SUCCESS ? bk : nullptr;
                     },
                     .inline_unhooker = [](auto t) {
-                        return UnhookFunction(t) == RT_SUCCESS;
+                        return FrameworkUnhookFunction(t) == RT_SUCCESS;
                     },
                     .art_symbol_resolver = [](auto symbol){
                         return GetArt()->getSymbAddress(symbol);
