@@ -62,7 +62,6 @@ import androidx.viewpager2.adapter.FragmentStateAdapter;
 import androidx.viewpager2.widget.ViewPager2;
 
 import com.bumptech.glide.request.target.CustomTarget;
-import com.bumptech.glide.request.transition.Transition;
 import com.google.android.material.behavior.HideBottomViewOnScrollBehavior;
 import com.google.android.material.checkbox.MaterialCheckBox;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
@@ -575,19 +574,12 @@ public class ModulesFragment extends BaseFragment implements ModuleUtil.ModuleLi
                 appName = item.getAppName();
             }
             holder.appName.setText(appName);
+            // into(ImageView) rather than a bare CustomTarget: Glide only cancels the
+            // previous request when the target is bound to the view, so a recycled
+            // holder used to leave several icons racing to set themselves.
             GlideApp.with(holder.appIcon)
                     .load(item.getPackageInfo())
-                    .into(new CustomTarget<Drawable>() {
-                        @Override
-                        public void onResourceReady(@NonNull Drawable resource, @Nullable Transition<? super Drawable> transition) {
-                            holder.appIcon.setImageDrawable(resource);
-                        }
-
-                        @Override
-                        public void onLoadCleared(@Nullable Drawable placeholder) {
-
-                        }
-                    });
+                    .into(holder.appIcon);
             SpannableStringBuilder sb = new SpannableStringBuilder();
             if (!item.getDescription().isEmpty()) {
                 sb.append(item.getDescription());
@@ -758,7 +750,13 @@ public class ModulesFragment extends BaseFragment implements ModuleUtil.ModuleLi
 
         private final Runnable reloadModules = () -> {
             var modules = moduleUtil.getModules();
-            if (modules == null) return;
+            if (modules == null) {
+                // Nothing to show, but the indicator still has to come down: leaving
+                // isLoaded false keeps the refresh spinner over the list, which reads as
+                // flicker and swallows taps meant for the rows underneath.
+                setLoaded(null, true);
+                return;
+            }
             Comparator<PackageInfo> cmp = AppHelper.getAppListComparator(0, pm);
             setLoaded(null, false);
             var tmpList = new ArrayList<ModuleUtil.InstalledModule>();
