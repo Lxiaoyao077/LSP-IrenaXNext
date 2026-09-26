@@ -129,26 +129,36 @@ public final class ModuleUtil {
             return;
         }
 
-        Map<Pair<String, Integer>, InstalledModule> modules = new HashMap<>();
-        var users = ConfigManager.getUsers();
-        for (PackageInfo pkg : ConfigManager.getInstalledPackagesFromAllUsers(PackageManager.GET_META_DATA | MATCH_ALL_FLAGS, false)) {
-            ApplicationInfo app = pkg.applicationInfo;
+        try {
+            Map<Pair<String, Integer>, InstalledModule> modules = new HashMap<>();
+            var users = ConfigManager.getUsers();
+            for (PackageInfo pkg : ConfigManager.getInstalledPackagesFromAllUsers(PackageManager.GET_META_DATA | MATCH_ALL_FLAGS, false)) {
+                ApplicationInfo app = pkg.applicationInfo;
 
-            var modernApk = getModernModuleApk(app);
-            if (modernApk != null || isLegacyModule(app)) {
-                modules.computeIfAbsent(Pair.create(pkg.packageName, app.uid / App.PER_USER_RANGE), k -> new InstalledModule(pkg, modernApk));
+                var modernApk = getModernModuleApk(app);
+                if (modernApk != null || isLegacyModule(app)) {
+                    modules.computeIfAbsent(Pair.create(pkg.packageName, app.uid / App.PER_USER_RANGE), k -> new InstalledModule(pkg, modernApk));
+                }
             }
+
+            installedModules = modules;
+
+            this.users = users;
+
+            var enabled = ConfigManager.getEnabledModules();
+            enabledModules = enabled == null ? new HashSet<>() : enabled.stream()
+                    .map(module -> Pair.create(module.packageName, module.userId))
+                    .collect(Collectors.toCollection(HashSet::new));
+        } catch (Throwable t) {
+            // This used to be able to leave modulesLoaded false for good, and isLoaded() is
+            // gated on it: every row then ignored taps and the refresh indicator never came
+            // down. Report, and keep whatever was assembled above.
+            Log.e(App.TAG, "failed to reload installed modules", t);
+        } finally {
+            // Whatever happened, the flag has to land - the UI cannot recover otherwise.
+            modulesLoaded = true;
+            listeners.forEach(ModuleListener::onModulesReloaded);
         }
-
-        installedModules = modules;
-
-        this.users = users;
-
-        enabledModules = ConfigManager.getEnabledModules().stream()
-                .map(module -> Pair.create(module.packageName, module.userId))
-                .collect(Collectors.toCollection(HashSet::new));
-        modulesLoaded = true;
-        listeners.forEach(ModuleListener::onModulesReloaded);
     }
 
     @Nullable
