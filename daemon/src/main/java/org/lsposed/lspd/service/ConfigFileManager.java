@@ -437,19 +437,37 @@ public class ConfigFileManager {
         if (apkFile.getEntry("META-INF/xposed/java_init.list") == null) return null;
         var properties = readModuleProperties(apkFile);
         if (properties == null) return null;
-        int minApiVersion = readApiVersion(properties, "minApiVersion");
+        // minApiVersion is what the module requires of the framework: above what we
+        // implement, it cannot run here.
+        if (readApiVersion(properties, "minApiVersion") > LSPModuleService.XPOSED_API_VERSION) {
+            return null;
+        }
+        // targetApiVersion is optional - absent reads as 0, and 0 means the module did not
+        // say, which is not the same as "built against something too old". Only a version
+        // the module actually wrote and that predates the modern loader is refused.
         int targetApiVersion = readApiVersion(properties, "targetApiVersion");
-        if (minApiVersion > LSPModuleService.XPOSED_API_VERSION) return null;
-        if (targetApiVersion < LSPModuleService.MIN_SUPPORTED_API_VERSION) return null;
+        if (targetApiVersion != 0 && targetApiVersion < LSPModuleService.MIN_SUPPORTED_API_VERSION) {
+            return null;
+        }
         return properties;
     }
 
+    /**
+     * Whether the module is a modern one, as opposed to a legacy {@code de.robv.android.xposed}
+     * module.
+     *
+     * <p>The entry list decides it: {@code META-INF/xposed/java_init.list} is what the modern
+     * loader reads, and a legacy module ships {@code assets/xposed_init} instead. A module that
+     * declares a modern API version is one too, even if it kept the legacy entry file for
+     * compatibility, which is why that stays as a second signal.</p>
+     */
     static boolean requiresModernModuleLoading(ZipFile apkFile) {
+        if (apkFile.getEntry("META-INF/xposed/java_init.list") != null) return true;
         var properties = readModuleProperties(apkFile);
         if (properties == null) return false;
         int minApiVersion = readApiVersion(properties, "minApiVersion");
         int targetApiVersion = readApiVersion(properties, "targetApiVersion");
-        return minApiVersion > LSPModuleService.XPOSED_API_VERSION
+        return minApiVersion >= LSPModuleService.MIN_SUPPORTED_API_VERSION
                 || targetApiVersion >= LSPModuleService.MIN_SUPPORTED_API_VERSION;
     }
 
