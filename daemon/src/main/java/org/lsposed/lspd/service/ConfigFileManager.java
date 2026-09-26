@@ -178,6 +178,49 @@ public class ConfigFileManager {
         }
     }
 
+    /**
+     * The rotated parts of one of the two logs, oldest first.
+     *
+     * The daemon names them "<prefix>_<ISO date-time>.log", so the name sorts by age as it stands
+     * and no timestamp has to be parsed back out. Ten are kept (see LogcatService.LogLRU), and the
+     * live one is among them.
+     */
+    static List<String> getLogParts(boolean verbose) {
+        var prefix = (verbose ? "verbose" : "modules") + "_";
+        if (Files.notExists(logDirPath)) return List.of();
+        try (var entries = Files.list(logDirPath)) {
+            return entries.filter(Files::isRegularFile)
+                    .map(p -> p.getFileName().toString())
+                    .filter(name -> name.startsWith(prefix) && name.endsWith(".log"))
+                    .sorted()
+                    .toList();
+        } catch (IOException e) {
+            Log.e(TAG, "getLogParts", e);
+            return List.of();
+        }
+    }
+
+    /**
+     * One of those, by name.
+     *
+     * The name is checked rather than trusted: it arrives over binder from the manager, and the
+     * check is what keeps it naming a log of the right kind inside the log directory instead of
+     * anywhere the daemon can read.
+     */
+    static ParcelFileDescriptor getLogPart(boolean verbose, String name) {
+        if (name == null) return null;
+        var prefix = (verbose ? "verbose" : "modules") + "_";
+        if (!name.startsWith(prefix) || !name.endsWith(".log") || name.contains("/")) return null;
+        try {
+            var file = logDirPath.resolve(name).toFile();
+            if (!file.isFile()) return null;
+            return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
+        } catch (IOException e) {
+            Log.e(TAG, "getLogPart", e);
+            return null;
+        }
+    }
+
     static ParcelFileDescriptor getManagerApk() throws IOException {
         if (fd != null) return fd.dup();
         InstallerVerifier.verifyInstallerSignature(managerApkPath.toString());

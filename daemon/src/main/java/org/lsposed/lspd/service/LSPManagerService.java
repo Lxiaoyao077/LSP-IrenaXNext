@@ -585,6 +585,70 @@ public class LSPManagerService extends ILSPManagerService.Stub {
         ConfigManager.getInstance().setInlineHookBackend(backend);
     }
 
+    /**
+     * Restarts zygote, which takes every process the framework is loaded into with it.
+     *
+     * That is what "soft reboot" means and why it is worth having: a module's scope or an inline
+     * hook engine only takes effect in processes started afterwards, and a full reboot to get them
+     * is a reboot. The write can be refused by SELinux on some roots, which is logged and left at
+     * that -- the caller has nothing it could do differently, and a wrong success would be worse.
+     */
+    @Override
+    public void softReboot() {
+        try {
+            SystemProperties.set("ctl.restart", "zygote");
+        } catch (Throwable e) {
+            Log.e(TAG, "softReboot", e);
+        }
+    }
+
+    /**
+     * Which root implementation this device has, by the directory each one keeps its state in.
+     *
+     * More than one is a real state and not an error: KernelSU is commonly installed alongside
+     * Magisk, and reporting either alone would name a manager the user may not be using.
+     */
+    @Override
+    public int getRootImplementation() {
+        var magisk = java.nio.file.Files.exists(java.nio.file.Paths.get("/data/adb/magisk"))
+                || java.nio.file.Files.exists(java.nio.file.Paths.get("/data/adb/magisk.db"));
+        var kernelsu = java.nio.file.Files.exists(java.nio.file.Paths.get("/data/adb/ksu"));
+        var apatch = java.nio.file.Files.exists(java.nio.file.Paths.get("/data/adb/ap"));
+        var found = (magisk ? 1 : 0) + (kernelsu ? 1 : 0) + (apatch ? 1 : 0);
+        if (found > 1) return ILSPManagerService.ROOT_MULTIPLE;
+        if (magisk) return ILSPManagerService.ROOT_MAGISK;
+        if (kernelsu) return ILSPManagerService.ROOT_KERNELSU;
+        if (apatch) return ILSPManagerService.ROOT_APATCH;
+        return ILSPManagerService.ROOT_NONE;
+    }
+
+    /**
+     * The flashed manager APK.
+     *
+     * Null rather than an exception when it is missing or fails its own signature check: to the
+     * manager that is the same answer -- the offer to install it as an ordinary app is unusable --
+     * and the two are not worth telling apart on screen.
+     */
+    @Override
+    public ParcelFileDescriptor getManagerApk() {
+        try {
+            return ConfigFileManager.getManagerApk();
+        } catch (Throwable e) {
+            Log.e(TAG, "getManagerApk", e);
+            return null;
+        }
+    }
+
+    @Override
+    public List<String> getLogParts(boolean verbose) {
+        return ConfigFileManager.getLogParts(verbose);
+    }
+
+    @Override
+    public ParcelFileDescriptor getLogPart(boolean verbose, String name) {
+        return ConfigFileManager.getLogPart(verbose, name);
+    }
+
     @Override
     public int getDex2OatWrapperCompatibility() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

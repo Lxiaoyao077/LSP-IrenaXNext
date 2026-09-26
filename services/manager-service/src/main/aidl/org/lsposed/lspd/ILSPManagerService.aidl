@@ -114,4 +114,32 @@ interface ILSPManagerService {
      * Processes already running keep the engine they started with.
      */
     void setInlineHookBackend(int backend) = 57;
+
+    // ---- reached by the ported manager, which asks for what its own daemon offers ----
+    // The VectorXposed-it UI is written against a richer daemon interface, and these are the calls
+    // it makes that irena had no equivalent of. Additive: the transaction numbers are new and the
+    // existing surface is untouched.
+    const int ALL_USERS = -1;
+
+    const int ROOT_UNKNOWN = 0;
+    const int ROOT_NONE = 1;
+    const int ROOT_MULTIPLE = 2;
+    const int ROOT_MAGISK = 3;
+    const int ROOT_KERNELSU = 4;
+    const int ROOT_APATCH = 5;
+
+    /** Restarts zygote, and with it every process the framework is loaded into. */
+    void softReboot() = 58;
+
+    /** One of ROOT_*, by whichever of the well-known module roots this device has. */
+    int getRootImplementation() = 59;
+
+    /** The flashed manager APK, or null when it is absent or fails its own signature check. */
+    ParcelFileDescriptor getManagerApk() = 60;
+
+    /** The rotated log files the daemon still holds, oldest first. */
+    List<String> getLogParts(boolean verbose) = 61;
+
+    /** One of those by name, or null when it is gone or the name does not name one of them. */
+    ParcelFileDescriptor getLogPart(boolean verbose, String name) = 62;
 }

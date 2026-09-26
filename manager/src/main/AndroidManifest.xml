@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Note that parasitically NONE of this is installed: the manager is injected into the
-  host process, so no component declared here exists at runtime and no permission
-  listed here is granted — the host's are what apply. This manifest governs the
-  standalone install used for development, and the LAUNCH_MANAGER category below is
-  what ParasiticManagerSystemHooker matches on to redirect the activity.
+  Same shape as upstream, with the launch category irena's hookers match on. The manager
+  is injected into com.android.shell, so no component declared here exists at runtime and
+  no permission listed here is granted — the host's are what apply. This manifest governs
+  the standalone install, and "${applicationId}.LAUNCH_MANAGER" below is what
+  ParasiticManagerSystemHooker matches on to redirect the activity.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
@@ -39,7 +39,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="${applicationId}.LAUNCH_MANAGER" />
-                <category android:name="org.matrix.vector.manager.LAUNCH_MANAGER" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <!-- Lets the system Settings app surface Vector under an app's preferences entry. -->
@@ -57,7 +56,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="${applicationId}.LAUNCH_MANAGER" />
-                <category android:name="org.matrix.vector.manager.LAUNCH_MANAGER" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <intent-filter>

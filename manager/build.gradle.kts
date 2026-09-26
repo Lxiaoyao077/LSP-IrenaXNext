@@ -46,6 +46,10 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        // The upstream daemon interface is an AIDL one, and it is vendored here rather than
+        // rewritten as a hand-written interface because the debug demo subclasses its Stub() --
+        // a fake that stops compiling when the daemon grows a question is the point of it.
+        aidl = true
     }
 
     defaultConfig {
@@ -109,6 +113,9 @@ android {
 dependencies {
     implementation(projects.services.managerService)
     implementation(projects.managerUi)
+
+    // ParcelableListSlice, which the vendored IManagerService AIDL imports.
+    implementation(libs.rikkax.parcelablelist)
 
     implementation(libs.gson)
     implementation(libs.okhttp)

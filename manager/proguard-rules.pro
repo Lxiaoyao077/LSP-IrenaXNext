@@ -9,6 +9,10 @@
 -keep class org.javsaia.vector.manager.Constants {
     public static boolean setBinder(android.os.IBinder);
 }
+# irena's daemon looks this one up by name: it is where the manager package's Constants lives.
+-keep class org.lsposed.manager.Constants {
+    public static boolean setBinder(android.os.IBinder);
+}
 
 # ParasiticManagerHooker redirects the resolved activity to this class by name.
 -keep class org.matrix.vector.manager.ui.MainActivity { <init>(); }
