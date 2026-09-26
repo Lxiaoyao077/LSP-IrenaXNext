@@ -110,7 +110,7 @@
             android:title="@string/settings_xposed_api_call_protection" />
 
         <rikka.material.preference.MaterialSwitchPreference
-            android:defaultValue="true"
+            android:defaultValue="false"
             android:icon="@drawable/ic_outline_dns_24"
             android:key="enable_shadowhook_backend"
             android:persistent="false"

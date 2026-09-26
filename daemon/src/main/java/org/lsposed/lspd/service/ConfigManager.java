@@ -1156,9 +1156,11 @@ public class ConfigManager {
     // at startup, and the value has to reflect the last write from the manager.
     int inlineHookBackend() {
         var value = getModulePrefs("lspd", 0, "config").get("inline_hook_backend");
+        // Dobby is the default: ShadowHook is opt-in until it has been exercised
+        // against an app that hooks natively on a real device.
         return value instanceof Integer
                 ? (Integer) value
-                : ILSPManagerService.INLINE_HOOK_BACKEND_SHADOWHOOK;
+                : ILSPManagerService.INLINE_HOOK_BACKEND_DOBBY;
     }
 
     // this is for manager and should not use the cache result

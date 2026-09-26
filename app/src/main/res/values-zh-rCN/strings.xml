@@ -195,7 +195,7 @@
     <string name="settings_xposed_api_call_protection">Xposed API 调用保护</string>
     <string name="settings_xposed_api_call_protection_summary">阻止模块动态加载的代码使用 Xposed API，这会使某些模块失效，但有利于安全性</string>
     <string name="settings_shadowhook_backend">ShadowHook 内联 Hook 引擎</string>
-    <string name="settings_shadowhook_backend_summary">使用字节跳动 ShadowHook 替代 Dobby 安装 native 内联 Hook。仅对改动之后启动的进程生效，重启后才会统一。</string>
+    <string name="settings_shadowhook_backend_summary">使用字节跳动 ShadowHook 替代 Dobby 安装 native 内联 Hook。默认关闭：可能与自行做 native hook 的应用冲突。仅对改动之后启动的进程生效，重启后才会统一。</string>
     <!-- Module Repo -->
     <string name="module_readme">自述文件</string>
     <string name="module_releases">版本</string>

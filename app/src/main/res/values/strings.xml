@@ -213,7 +213,7 @@
     <string name="settings_xposed_api_call_protection">Xposed API call protection</string>
     <string name="settings_xposed_api_call_protection_summary">Block dynamically loaded module code to use Xposed API, this may break some modules but benefit security</string>
     <string name="settings_shadowhook_backend">ShadowHook inline hook engine</string>
-    <string name="settings_shadowhook_backend_summary">Use ByteDance ShadowHook instead of Dobby to install native inline hooks. Only processes started after the change pick it up, so a reboot is what makes it uniform.</string>
+    <string name="settings_shadowhook_backend_summary">Use ByteDance ShadowHook instead of Dobby to install native inline hooks. Off by default: it can clash with apps that hook natively themselves. Only processes started after the change pick it up, so a reboot is what makes it uniform.</string>
 
     <!-- Module Repo -->
     <string name="module_readme">Readme</string>

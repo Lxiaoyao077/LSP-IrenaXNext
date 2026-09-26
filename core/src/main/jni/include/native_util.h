@@ -118,7 +118,12 @@ inline std::map<uintptr_t, void *> g_shadowhook_stubs;
 
 inline bool shadowhookInit() {
     std::call_once(g_shadowhook_init_once, [] {
-        g_shadowhook_init_result = shadowhook_init(SHADOWHOOK_MODE_UNIQUE, false);
+        // SHARED, not UNIQUE. In UNIQUE mode a second hook on the same address is
+        // refused (SHADOWHOOK_ERRNO_HOOK_UNIQUE_DUP), and the fallback below would then
+        // hand that address to Dobby - leaving both engines owning one function and the
+        // process running a torn mixture of the two. Apps that hook natively themselves
+        // tripped this reliably. SHARED accepts repeated hooks and chains them.
+        g_shadowhook_init_result = shadowhook_init(SHADOWHOOK_MODE_SHARED, false);
         if (g_shadowhook_init_result != 0) {
             LOGE("ShadowHook init failed: {}",
                  shadowhook_to_errmsg(shadowhook_get_init_errno()));
