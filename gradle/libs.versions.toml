@@ -3,7 +3,7 @@ agp = "9.4.1"
 kotlin = "2.4.20"
 nav = "2.9.8"
 glide = "5.0.9"
-okhttp = "5.3.2"
+okhttp = "5.5.0"
 startupRuntime = "1.2.0"
 ndk = "29.0.13599879-beta2"
 
