@@ -110,6 +110,9 @@ namespace lspd {
             auto &&next_binder = application_binder ? application_binder : system_server_binder;
             const auto [dex_fd, size] = instance->RequestLSPDex(env, next_binder);
             auto obfs_map = instance->RequestObfuscationMap(env, next_binder);
+            // Settle the inline hook engine before LSPlant is initialised further
+            // down, because it latches the backend on its first inline hook.
+            SetInlineHookBackend(instance->RequestInlineHookBackend(env, next_binder));
             ConfigBridge::GetInstance()->obfuscation_map(std::move(obfs_map));
             LoadDex(env, PreloadedDex(dex_fd, size));
             close(dex_fd);
@@ -212,6 +215,9 @@ namespace lspd {
             };
             auto [dex_fd, size] = instance->RequestLSPDex(env, binder);
             auto obfs_map = instance->RequestObfuscationMap(env, binder);
+            // Settle the inline hook engine before LSPlant is initialised further
+            // down, because it latches the backend on its first inline hook.
+            SetInlineHookBackend(instance->RequestInlineHookBackend(env, binder));
             ConfigBridge::GetInstance()->obfuscation_map(std::move(obfs_map));
             LoadDex(env, PreloadedDex(dex_fd, size));
             close(dex_fd);

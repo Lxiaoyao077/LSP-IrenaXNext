@@ -392,4 +392,17 @@ namespace lspd {
 
         return ret;
     }
+
+    int Service::RequestInlineHookBackend(JNIEnv *env, const lsplant::ScopedLocalRef<jobject> &binder) {
+        Wrapper wrapper{env, this};
+        bool res = wrapper.transact(binder, INLINE_HOOK_TRANSACTION_CODE);
+
+        if (!res) {
+            LOGW("Service::RequestInlineHookBackend: transaction failed?");
+            // -1 normalises to Dobby in SetInlineHookBackend, so a failed read cannot
+            // leave the process without a working engine.
+            return -1;
+        }
+        return JNI_CallIntMethod(env, wrapper.reply, read_int_method_);
+    }
 }  // namespace lspd

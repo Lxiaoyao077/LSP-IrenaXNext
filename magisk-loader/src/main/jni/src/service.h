@@ -34,6 +34,9 @@ namespace lspd {
     class Service {
         constexpr static jint DEX_TRANSACTION_CODE = 1310096052;
         constexpr static jint OBFUSCATION_MAP_TRANSACTION_CODE = 724533732;
+        // '_' << 24 | 'I' << 16 | 'H' << 8 | 'B'. Must stay in step with the daemon's
+        // LSPApplicationService, which answers it.
+        constexpr static jint INLINE_HOOK_TRANSACTION_CODE = ('_' << 24) | ('I' << 16) | ('H' << 8) | 'B';
         constexpr static jint BRIDGE_TRANSACTION_CODE = 1598837584;
         constexpr static auto BRIDGE_SERVICE_DESCRIPTOR = "LSPosed"sv;
         constexpr static auto BRIDGE_SERVICE_NAME = "activity"sv;
@@ -87,6 +90,8 @@ namespace lspd {
         std::tuple<int, size_t> RequestLSPDex(JNIEnv *env, const lsplant::ScopedLocalRef<jobject> &binder);
 
         std::map<std::string, std::string> RequestObfuscationMap(JNIEnv *env, const lsplant::ScopedLocalRef<jobject> &binder);
+
+        int RequestInlineHookBackend(JNIEnv *env, const lsplant::ScopedLocalRef<jobject> &binder);
 
     private:
         static std::unique_ptr<Service> instance_;

@@ -12,4 +12,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE src)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC dobby lsplant_static log fmt-header-only)
+
+# Only defined for the arm ABIs; elsewhere HookFunction has no reference to it.
+if (TARGET shadowhook)
+    target_link_libraries(${PROJECT_NAME} PUBLIC shadowhook)
+endif ()
 target_link_libraries(${PROJECT_NAME} PRIVATE dex_builder_static)
