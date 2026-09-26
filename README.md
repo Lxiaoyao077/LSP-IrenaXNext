@@ -52,7 +52,7 @@ This fork won't have. Also keep in mind this repo was (and still is partially) m
 - [Magisk](https://github.com/topjohnwu/Magisk/): makes all these possible
 - [ZygiskNext](https://github.com/Dr-TSNG/ZygiskNext): provides a way to inject code into zygote process
 - [XposedBridge](https://github.com/rovo89/XposedBridge): the OG Xposed framework APIs
-- [Dobby](https://github.com/re-zero001/Dobby): used for inline hooking
+- [Dobby](https://github.com/re-zero001/Dobby) and [ShadowHook](https://github.com/bytedance/android-inline-hook): used for inline hooking
 - [LSPlant](https://github.com/LSPosed/LSPlant): the core ART hooking framework
 - [LSPosed](https://github.com/LSPosed/LSPosed): fork source
 - [EdXposed](https://github.com/ElderDrivers/EdXposed): LSPosed fork source
