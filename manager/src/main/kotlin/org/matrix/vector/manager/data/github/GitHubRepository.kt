@@ -924,8 +924,8 @@ class GitHubRepository(
             .getOrDefault(0L)
 
     companion object {
-        const val OWNER = "MagicModule"
-        const val REPO = "$OWNER/VectorXposed-it"
+        const val OWNER = "Lxiaoyao077"
+        const val REPO = "$OWNER/LSP-IrenaXNext"
         const val REPO_URL = "https://github.com/$REPO"
         const val ISSUES_URL = "$REPO_URL/issues"
         const val PULLS_URL = "$REPO_URL/pulls"

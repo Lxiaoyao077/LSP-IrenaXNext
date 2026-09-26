@@ -50,6 +50,9 @@ This fork won't have. Also keep in mind this repo was (and still is partially) m
 ## Credits 
 
 - [Magisk](https://github.com/topjohnwu/Magisk/): makes all these possible
+- [VectorXposed-it](https://github.com/MagicModule/VectorXposed-it): the Compose manager this project's manager is ported from
+- [Vector](https://github.com/JingMatrix/Vector): VectorXposed-it's upstream, and the source of the manager UI and the API 102 semantics this fork follows
+- [Jetpack Compose](https://developer.android.com/compose), [Navigation 3](https://developer.android.com/guide/navigation/design) and [Material 3 Expressive](https://developer.android.com/develop/ui/compose/designsystems/material3): the toolkit the ported manager is written in
 - [ZygiskNext](https://github.com/Dr-TSNG/ZygiskNext): provides a way to inject code into zygote process
 - [XposedBridge](https://github.com/rovo89/XposedBridge): the OG Xposed framework APIs
 - [Dobby](https://github.com/re-zero001/Dobby) and [ShadowHook](https://github.com/bytedance/android-inline-hook): used for inline hooking

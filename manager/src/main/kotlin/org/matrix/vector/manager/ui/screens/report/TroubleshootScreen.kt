@@ -343,4 +343,4 @@ private class RootRefused(output: String) : Exception(output)
 
 private const val NEO_ZYGISK = "https://github.com/JingMatrix/NeoZygisk"
 private const val GUIDE_ISSUE = 123
-private const val GUIDE_ISSUE_URL = "https://github.com/JingMatrix/Vector/issues/$GUIDE_ISSUE"
+private const val GUIDE_ISSUE_URL = "https://github.com/Lxiaoyao077/LSP-IrenaXNext/issues/$GUIDE_ISSUE"
