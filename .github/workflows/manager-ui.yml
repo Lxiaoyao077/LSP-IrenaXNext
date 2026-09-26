@@ -1,13 +1,14 @@
 name: Manager UI
 
-# Compiles :manager-ui by itself. While nothing depends on the module yet, `zipAll`
-# would never reach it, and a port that only gets compiled later is a port nobody knows
-# is broken. Fold this into Core once :app depends on the module.
+# Compiles the ported manager modules by themselves. Nothing depends on them yet, so
+# `zipAll` would never reach them, and a port that only gets compiled later is a port
+# nobody knows is broken. Fold this into Core once :manager is what gets packaged.
 on:
   push:
     branches: [ dev ]
     paths:
       - 'manager-ui/**'
+      - 'manager/**'
       - 'gradle/libs.versions.toml'
       - 'settings.gradle.kts'
       - 'build.gradle.kts'
@@ -49,4 +50,4 @@ jobs:
         run: rm -rf $ANDROID_HOME/cmake
 
       - name: Compile manager-ui
-        run: ./gradlew :manager-ui:assembleDebug
+        run: ./gradlew :manager-ui:assembleDebug :manager:assembleDebug
