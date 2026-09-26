@@ -172,6 +172,18 @@ public class SettingsFragment extends BaseFragment {
                 });
             }
 
+            MaterialSwitchPreference prefShadowHook = findPreference("enable_shadowhook_backend");
+            if (prefShadowHook != null) {
+                prefShadowHook.setEnabled(installed);
+                prefShadowHook.setChecked(!installed || ConfigManager.isShadowHookBackendEnabled());
+                prefShadowHook.setOnPreferenceChangeListener((preference, newValue) -> {
+                    // Already-running processes keep the engine they started with, so this
+                    // is only uniform after a reboot.
+                    parentFragment.showHint(R.string.reboot_required, true, R.string.reboot, v -> ConfigManager.reboot());
+                    return ConfigManager.setShadowHookBackendEnabled((boolean) newValue);
+                });
+            }
+
             MaterialSwitchPreference notificationPreference = findPreference("enable_status_notification");
             if (notificationPreference != null) {
                 notificationPreference.setVisible(installed);

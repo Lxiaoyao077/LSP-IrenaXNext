@@ -110,6 +110,14 @@
             android:title="@string/settings_xposed_api_call_protection" />
 
         <rikka.material.preference.MaterialSwitchPreference
+            android:defaultValue="true"
+            android:icon="@drawable/ic_outline_dns_24"
+            android:key="enable_shadowhook_backend"
+            android:persistent="false"
+            android:summary="@string/settings_shadowhook_backend_summary"
+            android:title="@string/settings_shadowhook_backend" />
+
+        <rikka.material.preference.MaterialSwitchPreference
             android:defaultValue="false"
             android:icon="@drawable/ic_outline_speaker_notes_24"
             android:key="enable_status_notification"

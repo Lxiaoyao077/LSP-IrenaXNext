@@ -411,6 +411,28 @@ public class ConfigManager {
         }
     }
 
+    public static boolean isShadowHookBackendEnabled() {
+        try {
+            return LSPManagerServiceHolder.getService().getInlineHookBackend()
+                    == ILSPManagerService.INLINE_HOOK_BACKEND_SHADOWHOOK;
+        } catch (RemoteException e) {
+            Log.e(App.TAG, Log.getStackTraceString(e));
+            return false;
+        }
+    }
+
+    public static boolean setShadowHookBackendEnabled(boolean enabled) {
+        try {
+            LSPManagerServiceHolder.getService().setInlineHookBackend(enabled
+                    ? ILSPManagerService.INLINE_HOOK_BACKEND_SHADOWHOOK
+                    : ILSPManagerService.INLINE_HOOK_BACKEND_DOBBY);
+            return true;
+        } catch (RemoteException e) {
+            Log.e(App.TAG, Log.getStackTraceString(e));
+            return false;
+        }
+    }
+
     public static int getDex2OatWrapperCompatibility() {
         try {
             return LSPManagerServiceHolder.getService().getDex2OatWrapperCompatibility();
